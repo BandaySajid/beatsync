@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import path from "path";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
@@ -31,8 +32,9 @@ const nextConfig: NextConfig = {
   // 10.0.0.* and 192.168.1.* let phones on the local network load dev resources
   allowedDevOrigins: ["local.beatsync.gg", "10.0.0.*", "192.168.1.*"],
   // Fix for Vercel/Cloudflare Pages Turbopack monorepo resolution
+  outputFileTracingRoot: path.join(__dirname, "../../"),
   turbopack: {
-    root: "../../",
+    root: path.join(__dirname, "../../"),
   },
 };
 
