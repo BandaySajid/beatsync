@@ -30,6 +30,12 @@ const nextConfig: NextConfig = {
   skipTrailingSlashRedirect: true,
   // 10.0.0.* and 192.168.1.* let phones on the local network load dev resources
   allowedDevOrigins: ["local.beatsync.gg", "10.0.0.*", "192.168.1.*"],
+  // Fix for Vercel/Cloudflare Pages Turbopack monorepo resolution
+  experimental: {
+    turbopack: {
+      root: "../../",
+    },
+  },
 };
 
 export default nextConfig;

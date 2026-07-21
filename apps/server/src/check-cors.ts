@@ -21,28 +21,29 @@ async function check() {
   try {
     const cors = await r2Client.send(new GetBucketCorsCommand({ Bucket: bucket }));
     console.log("CORS RULES BEFORE:", JSON.stringify(cors.CORSRules, null, 2));
-  } catch(e) {
+  } catch (e) {
     console.error("Error getting CORS (might not be set):", e);
   }
-  
+
   try {
-    await r2Client.send(new PutBucketCorsCommand({
-      Bucket: bucket,
-      CORSConfiguration: {
-        CORSRules: [
-          {
-            AllowedHeaders: ["*"],
-            AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"],
-            AllowedOrigins: ["*"],
-            ExposeHeaders: ["ETag"],
-            MaxAgeSeconds: 3000
-          }
-        ]
-      }
-    }));
+    await r2Client.send(
+      new PutBucketCorsCommand({
+        Bucket: bucket,
+        CORSConfiguration: {
+          CORSRules: [
+            {
+              AllowedHeaders: ["*"],
+              AllowedMethods: ["GET", "PUT", "POST", "DELETE", "HEAD"],
+              AllowedOrigins: ["*"],
+              ExposeHeaders: ["ETag"],
+              MaxAgeSeconds: 3000,
+            },
+          ],
+        },
+      })
+    );
     console.log("Updated CORS to allow * !");
-    
-  } catch(e) {
+  } catch (e) {
     console.error("Error setting CORS:", e);
   }
 }

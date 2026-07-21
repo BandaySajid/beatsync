@@ -84,8 +84,6 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
       r2Url = await uploadBytes(arrayBuffer, roomId, fileName, contentType);
     }
 
-
-
     // Add the audio source to the room and get updated sources list
     const sources = room.addAudioSource({ url: r2Url });
 

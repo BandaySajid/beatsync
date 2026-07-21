@@ -11,7 +11,7 @@ export const handleSearchMusic: HandlerFunction<ExtractWSRequestFrom["SEARCH_MUS
     const [appleResult, ytResult] = await Promise.allSettled([
       MUSIC_PROVIDER_MANAGER.search(message.query, message.offset ?? 0),
       // Only fetch YouTube results on the first page
-      (message.offset === 0 || !message.offset) ? YOUTUBE_MANAGER.search(message.query) : Promise.resolve([])
+      message.offset === 0 || !message.offset ? YOUTUBE_MANAGER.search(message.query) : Promise.resolve([]),
     ]);
 
     const data = appleResult.status === "fulfilled" ? appleResult.value : null;
@@ -40,7 +40,7 @@ export const handleSearchMusic: HandlerFunction<ExtractWSRequestFrom["SEARCH_MUS
           query: message.query,
           response: {
             type: "success",
-            response: mockData as any,
+            response: mockData,
           },
         },
       });

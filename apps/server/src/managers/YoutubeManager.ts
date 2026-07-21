@@ -14,9 +14,7 @@ const COOKIES_FILE = path.join(process.cwd(), "cookies.txt");
 const hasCookiesFile = fs.existsSync(COOKIES_FILE);
 
 // Use cookies file if it exists (for production), otherwise fallback to browser (for dev)
-const cookieArgs = hasCookiesFile 
-  ? ["--cookies", COOKIES_FILE] 
-  : ["--cookies-from-browser", "chrome"];
+const cookieArgs = hasCookiesFile ? ["--cookies", COOKIES_FILE] : ["--cookies-from-browser", "chrome"];
 
 // Ensure cache directory exists on startup
 mkdir(CACHE_DIR, { recursive: true }).catch(console.error);
@@ -36,11 +34,7 @@ export class YoutubeManager {
     try {
       const parsed = new URL(url);
       const hostname = parsed.hostname.replace(/^www\./, "");
-      return (
-        hostname === "youtube.com" ||
-        hostname === "music.youtube.com" ||
-        hostname === "youtu.be"
-      );
+      return hostname === "youtube.com" || hostname === "music.youtube.com" || hostname === "youtu.be";
     } catch {
       return false;
     }
@@ -54,21 +48,11 @@ export class YoutubeManager {
     const filePath = join(CACHE_DIR, `${id}.m4a`);
 
     const titlePromise = (async () => {
-      const proc = Bun.spawn(
-        [
-          "yt-dlp",
-          "--dump-json",
-          "--no-playlist",
-          "--no-warnings",
-          ...cookieArgs,
-          youtubeUrl,
-        ],
-        { stdout: "pipe", stderr: "pipe" }
-      );
-      const [stdout, stderr] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-      ]);
+      const proc = Bun.spawn(["yt-dlp", "--dump-json", "--no-playlist", "--no-warnings", ...cookieArgs, youtubeUrl], {
+        stdout: "pipe",
+        stderr: "pipe",
+      });
+      const [stdout, stderr] = await Promise.all([new Response(proc.stdout).text(), new Response(proc.stderr).text()]);
       const exitCode = await proc.exited;
       if (exitCode !== 0) {
         throw new Error(`yt-dlp metadata extraction failed (exit ${exitCode}): ${stderr.trim()}`);
@@ -85,8 +69,10 @@ export class YoutubeManager {
       const proc = Bun.spawn(
         [
           "yt-dlp",
-          "-o", filePath,
-          "-f", "bestaudio[ext=m4a]/bestaudio/best",
+          "-o",
+          filePath,
+          "-f",
+          "bestaudio[ext=m4a]/bestaudio/best",
           "--no-playlist",
           "--no-warnings",
           ...cookieArgs,
@@ -94,7 +80,7 @@ export class YoutubeManager {
         ],
         { stdout: "pipe", stderr: "pipe" }
       );
-      
+
       const stderr = await new Response(proc.stderr).text();
       const exitCode = await proc.exited;
       if (exitCode !== 0) {
@@ -114,7 +100,7 @@ export class YoutubeManager {
   async addStreamAndUpload(youtubeUrl: string, roomId: string): Promise<{ publicUrl: string; title: string }> {
     console.log(`[YouTube] Downloading & extracting stream for: ${youtubeUrl}`);
     const id = randomUUID();
-    
+
     // 1. Download to local disk cache
     const { title, filePath } = await this.extractTitleAndDownload(youtubeUrl, id);
 
@@ -122,7 +108,7 @@ export class YoutubeManager {
       // 2. Upload to R2 (Cloudflare CDN)
       // Use standard filename generation so the UI parses the title cleanly
       const fileName = generateAudioFileName(`${title}.m4a`);
-      
+
       console.log(`[YouTube] Uploading "${title}" to R2...`);
       const publicUrl = await uploadFile(filePath, roomId, fileName);
       console.log(`[YouTube] Successfully uploaded "${title}" to R2: ${publicUrl}`);
@@ -141,23 +127,23 @@ export class YoutubeManager {
    */
   async search(query: string): Promise<TrackType[]> {
     console.log(`[YouTube] Searching for: ${query}`);
-    
+
     // First, try lighting-fast youtubei.js search
     try {
       const yt = await this.getInnertube();
-      const results = await yt.search(query, { type: 'video' });
-      
+      const results = await yt.search(query, { type: "video" });
+
       if (results && results.videos && results.videos.length > 0) {
         console.log(`[YouTube] Fast search returned ${results.videos.length} results`);
         const tracks: TrackType[] = [];
-        
+
         // Take top 5
         const topVideos = results.videos.slice(0, 5);
         for (const video of topVideos) {
           const duration = video.duration?.seconds ?? 0;
-          const title = typeof video.title === 'string' ? video.title : video.title?.text ?? "YouTube Video";
-          const author = typeof video.author === 'string' ? video.author : video.author?.name ?? "YouTube";
-          
+          const title = typeof video.title === "string" ? video.title : (video.title?.text ?? "YouTube Video");
+          const author = typeof video.author === "string" ? video.author : (video.author?.name ?? "YouTube");
+
           tracks.push({
             id: video.id,
             title,
@@ -221,7 +207,7 @@ export class YoutubeManager {
       try {
         const parsed = JSON.parse(line) as YtDlpJsonOutput;
         if (!parsed.id) continue;
-        
+
         // Map yt-dlp output to TrackType
         tracks.push({
           id: parsed.id,
