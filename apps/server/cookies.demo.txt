@@ -1,0 +1,12 @@
+# Netscape HTTP Cookie File
+# This is a generated file!  Do not edit.
+#
+# Replace this file with your actual exported YouTube cookies for production deployments!
+# 1. Install "Get cookies.txt LOCALLY" extension in Chrome
+# 2. Go to YouTube and ensure you are logged in and captchas are cleared
+# 3. Export cookies and save them here as `cookies.txt`
+
+.youtube.com	TRUE	/	TRUE	1745423851	VISITOR_INFO1_LIVE	DummyValueHere
+.youtube.com	TRUE	/	TRUE	1745423851	PREF	f4=4000000&tz=UTC
+.youtube.com	TRUE	/	FALSE	1745423851	SID	DummyValueHere
+.youtube.com	TRUE	/	TRUE	1745423851	__Secure-3PSID	DummyValueHere

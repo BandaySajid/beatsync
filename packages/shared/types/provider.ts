@@ -62,7 +62,7 @@ export const TrackSchema = z.object({
   version: z.string().nullable().optional(),
   duration: z.number(),
   parental_warning: z.boolean(),
-  id: z.number(),
+  id: z.union([z.number(), z.string()]),
 });
 export type TrackType = z.infer<typeof TrackSchema>;
 

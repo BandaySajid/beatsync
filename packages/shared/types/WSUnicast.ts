@@ -16,6 +16,7 @@ export type NTPResponseMessageType = z.infer<typeof NTPResponseMessageSchema>;
 
 export const MusicSearchResponseSchema = z.object({
   type: z.literal(ServerActionEnum.enum.SEARCH_RESPONSE),
+  query: z.string(), // Added to prevent race conditions
   response: SearchResponseSchema,
 });
 export type MusicSearchResponseType = z.infer<typeof MusicSearchResponseSchema>;

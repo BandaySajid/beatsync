@@ -39,3 +39,15 @@ bun dev              # starts both client (:3000) and server (:8080)
 | `apps/server`     | Bun HTTP + WebSocket server                                    |
 | `apps/client`     | Next.js frontend with Tailwind & Shadcn/ui                     |
 | `packages/shared` | Type-safe schemas and functions shared between client & server |
+
+## YouTube Search & Streaming (Production)
+
+Beatsync natively integrates YouTube search directly into the dashboard using `youtubei.js` for blazing-fast lookups, and falls back to `yt-dlp` for streaming audio flawlessly to R2.
+
+If you are running the server in **production** (e.g. Ubuntu, Docker), YouTube's bot detection will block `yt-dlp` audio extraction. To bypass this, you must export your browser cookies:
+
+1. Install the [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/ccpffkphkjlhlpebgcpmkoaignbobbdd) extension in your browser.
+2. Visit YouTube and ensure you are logged in and no captchas are pending.
+3. Export your cookies and save the file as `cookies.txt` in the root of your `apps/server` folder.
+
+*(Note: During local development on a Mac, the server will automatically extract cookies from your local Chrome installation.)*

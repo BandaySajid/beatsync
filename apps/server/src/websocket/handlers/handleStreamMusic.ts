@@ -2,6 +2,7 @@ import { IS_DEMO_MODE } from "@/demo";
 import { generateAudioFileName, uploadBytes } from "@/lib/r2";
 import { globalManager } from "@/managers";
 import { MUSIC_PROVIDER_MANAGER } from "@/managers/MusicProviderManager";
+import { YOUTUBE_MANAGER } from "@/managers/YoutubeManager";
 import { sendBroadcast } from "@/utils/responses";
 import type { HandlerFunction } from "@/websocket/types";
 import type { ExtractWSRequestFrom } from "@beatsync/shared";
@@ -40,38 +41,50 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
   });
 
   try {
-    // Get the stream URL from the music provider
-    const streamResponse = await MUSIC_PROVIDER_MANAGER.stream(message.trackId);
+    let r2Url: string;
 
-    if (!streamResponse.success) {
-      throw new Error("Failed to get stream URL");
+    if (typeof message.trackId === "string") {
+      // It's a YouTube track
+      const ytUrl = `https://youtube.com/watch?v=${message.trackId}`;
+      console.log(`Processing YouTube search result stream: ${ytUrl}`);
+      const result = await YOUTUBE_MANAGER.addStreamAndUpload(ytUrl, roomId);
+      r2Url = result.publicUrl;
+    } else {
+      // It's an Apple Music / Qobuz track
+      const streamResponse = await MUSIC_PROVIDER_MANAGER.stream(message.trackId);
+
+      if (!streamResponse.success) {
+        throw new Error("Failed to get stream URL");
+      }
+
+      const streamUrl = streamResponse.data.url;
+
+      // Use provided track name or fallback to track ID
+      const originalName = message.trackName ?? `track-${message.trackId}`;
+
+      // Download the audio file
+      console.log(`Downloading audio from: ${streamUrl}`);
+      const response = await fetch(streamUrl);
+
+      // Generate a unique filename for R2
+      const fileName = generateAudioFileName(`${originalName}.mp3`);
+
+      if (!response.ok) {
+        throw new Error(`Failed to download audio: ${response.status}`);
+      }
+
+      // Get audio bytes
+      const arrayBuffer = await response.arrayBuffer();
+
+      // Get content type from response headers, fallback to audio/mpeg
+      const contentType = response.headers.get("content-type") ?? "audio/mpeg";
+
+      // Upload directly to R2
+      console.log(`Uploading to R2: room-${roomId}/${fileName}`);
+      r2Url = await uploadBytes(arrayBuffer, roomId, fileName, contentType);
     }
 
-    const streamUrl = streamResponse.data.url;
 
-    // Use provided track name or fallback to track ID
-    const originalName = message.trackName ?? `track-${message.trackId}`;
-
-    // Download the audio file
-    console.log(`Downloading audio from: ${streamUrl}`);
-    const response = await fetch(streamUrl);
-
-    // Generate a unique filename for R2
-    const fileName = generateAudioFileName(`${originalName}.mp3`);
-
-    if (!response.ok) {
-      throw new Error(`Failed to download audio: ${response.status}`);
-    }
-
-    // Get audio bytes
-    const arrayBuffer = await response.arrayBuffer();
-
-    // Get content type from response headers, fallback to audio/mpeg
-    const contentType = response.headers.get("content-type") ?? "audio/mpeg";
-
-    // Upload directly to R2
-    console.log(`Uploading to R2: room-${roomId}/${fileName}`);
-    const r2Url = await uploadBytes(arrayBuffer, roomId, fileName, contentType);
 
     // Add the audio source to the room and get updated sources list
     const sources = room.addAudioSource({ url: r2Url });

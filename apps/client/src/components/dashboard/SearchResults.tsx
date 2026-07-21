@@ -343,9 +343,14 @@ export function SearchResults({ className, onTrackSelect }: SearchResultsProps) 
 
               {/* Track Info */}
               <div className="flex-1 min-w-0">
-                <h4 className="font-normal text-white truncate text-sm">
+                <h4 className="font-normal text-white truncate text-sm flex items-center gap-2">
                   {track.title}
                   {track.version && <span className="text-neutral-500 ml-1">({track.version})</span>}
+                  {typeof track.id === "string" && (
+                    <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-red-500/20 text-red-400">
+                      YouTube
+                    </span>
+                  )}
                 </h4>
                 <p className="text-xs text-neutral-400 truncate">{track.performer.name}</p>
               </div>

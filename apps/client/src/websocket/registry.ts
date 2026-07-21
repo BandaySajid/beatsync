@@ -122,8 +122,20 @@ export const WS_RESPONSE_REGISTRY: WebsocketResponseRegistry = {
   [ServerActionEnum.enum.SEARCH_RESPONSE]: {
     handle: ({ response }) => {
       console.log("Received search response:", response);
-      const { setSearchResults, setIsSearching, setIsLoadingMoreResults, setHasMoreResults, isLoadingMoreResults } =
-        useGlobalStore.getState();
+      const {
+        setSearchResults,
+        setIsSearching,
+        setIsLoadingMoreResults,
+        setHasMoreResults,
+        isLoadingMoreResults,
+        searchQuery,
+      } = useGlobalStore.getState();
+
+      // Prevent race condition: if the user typed a new search before this one finished, ignore this stale response!
+      if (response.query !== searchQuery) {
+        console.log(`Ignoring stale search response for "${response.query}" (current search is "${searchQuery}")`);
+        return;
+      }
 
       // Determine if this is pagination or new search
       const isAppending = isLoadingMoreResults;

@@ -8,6 +8,7 @@ import { handleSendIp } from "@/websocket/handlers/handleSendIp";
 import { handleSetAdmin } from "@/websocket/handlers/handleSetAdmin";
 import { handleSetPlaybackControls } from "@/websocket/handlers/handleSetPlaybackControls";
 import { handleStreamMusic } from "@/websocket/handlers/handleStreamMusic";
+import { handleAddYoutubeUrl } from "@/websocket/handlers/handleAddYoutubeUrl";
 import { handleMoveClient } from "@/websocket/handlers/moveClient";
 import { handleNTPRequest } from "@/websocket/handlers/ntpRequest";
 import { handlePause } from "@/websocket/handlers/pause";
@@ -132,5 +133,9 @@ export const WS_REGISTRY: WebsocketRegistry = {
   [ClientActionEnum.enum.LIVENESS_PONG]: {
     handle: handleLivenessPong,
     description: "Liveness reply to a server LIVENESS_PING",
+  },
+  [ClientActionEnum.enum.ADD_YOUTUBE_URL]: {
+    handle: handleAddYoutubeUrl,
+    description: "Extract and add a YouTube or YouTube Music URL to the room queue",
   },
 };

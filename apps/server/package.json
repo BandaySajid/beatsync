@@ -34,6 +34,7 @@
     "nanoid": "5.1.11",
     "p-limit": "7.3.0",
     "sanitize-filename": "1.6.4",
+    "youtubei.js": "^17.2.0",
     "zod": "4.4.3"
   },
   "devDependencies": {

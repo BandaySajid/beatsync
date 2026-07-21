@@ -28,8 +28,8 @@ const nextConfig: NextConfig = {
   },
   // This is required to support PostHog trailing slash API requests
   skipTrailingSlashRedirect: true,
-  // 10.0.0.* lets phones on the local network load dev resources
-  allowedDevOrigins: ["local.beatsync.gg", "10.0.0.*"],
+  // 10.0.0.* and 192.168.1.* let phones on the local network load dev resources
+  allowedDevOrigins: ["local.beatsync.gg", "10.0.0.*", "192.168.1.*"],
 };
 
 export default nextConfig;

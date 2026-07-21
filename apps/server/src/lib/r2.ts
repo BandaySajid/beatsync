@@ -167,7 +167,7 @@ export function generateAudioFileName(originalName: string): string {
 
   // Generate timestamp with date and random component
   const now = new Date();
-  const dateStr = now.toISOString().replace(":", "-");
+  const dateStr = now.toISOString().replace(/:/g, "-");
 
   return `${safeName}${R2_AUDIO_FILE_NAME_DELIMITER}${dateStr}.${extension}`;
 }
