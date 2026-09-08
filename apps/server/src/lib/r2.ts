@@ -1,4 +1,5 @@
 import {
+  CopyObjectCommand,
   DeleteObjectCommand,
   DeleteObjectsCommand,
   GetObjectCommand,
@@ -78,6 +79,41 @@ export function getPublicAudioUrl(roomId: string, fileName: string): string {
   // URL encode the filename to handle special characters like #, ?, &, etc.
   const encodedFileName = encodeURIComponent(fileName);
   return `${S3_CONFIG.PUBLIC_URL}/room-${roomId}/${encodedFileName}`;
+}
+
+/** Return a public URL for an arbitrary object key. */
+export function getPublicUrlForKey(key: string): string {
+  const encodedKey = key
+    .split("/")
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  return `${S3_CONFIG.PUBLIC_URL}/${encodedKey}`;
+}
+
+/** Look up an object without downloading it. */
+export async function getObjectInfo(key: string): Promise<{
+  exists: boolean;
+  metadata: Record<string, string>;
+}> {
+  try {
+    const response = await r2Client.send(
+      new HeadObjectCommand({
+        Bucket: S3_CONFIG.BUCKET_NAME,
+        Key: key,
+      })
+    );
+    return { exists: true, metadata: response.Metadata ?? {} };
+  } catch (error) {
+    const status =
+      error && typeof error === "object" && "$metadata" in error
+        ? (error as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode
+        : undefined;
+    const name = error instanceof Error ? error.name : "";
+    if (status === 404 || name === "NotFound" || name === "NoSuchKey") {
+      return { exists: false, metadata: {} };
+    }
+    throw error;
+  }
 }
 
 /**
@@ -348,23 +384,45 @@ export async function deleteObjectsWithPrefix(prefix = ""): Promise<{ deletedCou
  */
 export async function uploadFile(filePath: string, roomId: string, fileName: string): Promise<string> {
   const key = createKey(roomId, fileName);
+  const contentType = Bun.file(filePath).type || "audio/mpeg";
 
-  // Read file with Bun - it automatically detects content type
-  const file = Bun.file(filePath);
-  const buffer = await file.arrayBuffer();
+  await uploadFileToKey(filePath, key, contentType);
 
-  // Upload to R2
-  const command = new PutObjectCommand({
-    Bucket: S3_CONFIG.BUCKET_NAME,
-    Key: key,
-    Body: new Uint8Array(buffer),
-    ContentType: file.type || "audio/mpeg", // Fallback if detection fails
-  });
-
-  await r2Client.send(command);
-
-  // Return public URL
   return getPublicAudioUrl(roomId, fileName);
+}
+
+/** Upload a file to an arbitrary key. */
+export async function uploadFileToKey(
+  filePath: string,
+  key: string,
+  contentType = "audio/mp4",
+  metadata?: Record<string, string>
+): Promise<string> {
+  // A replayable body lets the AWS SDK retry transient R2 connection failures.
+  const body = new Uint8Array(await Bun.file(filePath).arrayBuffer());
+  await r2Client.send(
+    new PutObjectCommand({
+      Bucket: S3_CONFIG.BUCKET_NAME,
+      Key: key,
+      Body: body,
+      ContentType: contentType,
+      Metadata: metadata,
+    })
+  );
+  return getPublicUrlForKey(key);
+}
+
+/** Copy an existing R2 object without routing its bytes through this server. */
+export async function copyObject(sourceKey: string, destinationKey: string): Promise<string> {
+  await r2Client.send(
+    new CopyObjectCommand({
+      Bucket: S3_CONFIG.BUCKET_NAME,
+      CopySource: `${S3_CONFIG.BUCKET_NAME}/${sourceKey}`,
+      Key: destinationKey,
+      MetadataDirective: "COPY",
+    })
+  );
+  return getPublicUrlForKey(destinationKey);
 }
 
 /**
