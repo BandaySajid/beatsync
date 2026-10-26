@@ -9,6 +9,7 @@ import { handleRoot } from "@/routes/root";
 import { handleStats } from "@/routes/stats";
 import { handleGetPresignedURL, handleUploadComplete } from "@/routes/upload";
 import { handleWebSocketUpgrade } from "@/routes/websocket";
+import { handleYoutubeAudio } from "@/routes/youtube";
 import { handleClose, handleMessage, handleOpen } from "@/routes/websocketHandlers";
 import { corsHeaders, errorResponse } from "@/utils/responses";
 import type { WSData } from "@/utils/websocket";
@@ -17,9 +18,11 @@ import type { WSData } from "@/utils/websocket";
 const server = Bun.serve<WSData>({
   hostname: "0.0.0.0",
   port: Number(process.env.PORT) || 8000,
+  idleTimeout: 120,
   async fetch(req, server) {
     const start = performance.now();
     const url = new URL(req.url);
+    const youtubeStreamMatch = /^\/stream\/youtube\/([A-Za-z0-9_-]{11})(?:\/|$)/.exec(url.pathname);
 
     // Handle CORS preflight requests
     if (req.method === "OPTIONS") {
@@ -32,6 +35,8 @@ const server = Bun.serve<WSData>({
       // Demo mode: serve local audio files
       if (IS_DEMO_MODE && url.pathname.startsWith("/audio/")) {
         response = handleServeAudio(url.pathname);
+      } else if (youtubeStreamMatch) {
+        response = await handleYoutubeAudio(youtubeStreamMatch[1], req);
       } else {
         switch (url.pathname) {
           case "/":

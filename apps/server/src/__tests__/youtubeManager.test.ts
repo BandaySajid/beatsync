@@ -21,3 +21,19 @@ describe("YoutubeManager.getVideoId", () => {
     expect(YoutubeManager.getVideoId("https://youtube.com/watch?v=too-short")).toBeNull();
   });
 });
+
+describe("YoutubeManager stream URLs", () => {
+  test("builds a display-friendly stream path", () => {
+    const url = YoutubeManager.getStreamUrl("dQw4w9WgXcQ", "Artist / Title");
+    expect(url.startsWith("/stream/youtube/dQw4w9WgXcQ/")).toBe(true);
+    expect(url).toContain(encodeURIComponent("Artist - Title"));
+    expect(url.endsWith(".m4a")).toBe(true);
+  });
+
+  test("recognizes stream URLs for backup restore", () => {
+    expect(YoutubeManager.isStreamUrl("/stream/youtube/dQw4w9WgXcQ/Title___abc.m4a")).toBe(true);
+    expect(YoutubeManager.isStreamUrl("https://example.com/stream/youtube/dQw4w9WgXcQ/title.m4a")).toBe(true);
+    expect(YoutubeManager.isStreamUrl("/room-123/song.mp3")).toBe(false);
+    expect(YoutubeManager.isStreamUrl("not a url")).toBe(false);
+  });
+});

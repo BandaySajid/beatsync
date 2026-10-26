@@ -1,11 +1,7 @@
-import { mkdir, unlink } from "fs/promises";
-import { tmpdir } from "os";
-import { join } from "path";
-import { copyObject, createKey, generateAudioFileName, getObjectInfo, uploadFileToKey } from "@/lib/r2";
 import fs from "fs";
 import path from "path";
-import { Innertube } from "youtubei.js";
-import type { TrackType } from "@beatsync/shared";
+import { ClientType, Innertube } from "youtubei.js";
+import { R2_AUDIO_FILE_NAME_DELIMITER, type TrackType } from "@beatsync/shared";
 
 interface YtDlpJsonOutput {
   id?: string;
@@ -13,6 +9,14 @@ interface YtDlpJsonOutput {
   fulltitle?: string;
   duration?: number;
   uploader?: string;
+}
+
+export interface YoutubeStreamInfo {
+  url: string;
+  mimeType: string;
+  contentLength: number;
+  title: string;
+  expiresAt: number;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -25,17 +29,18 @@ const readText = (value: unknown, nestedKey: string): string | undefined => {
   return typeof nested === "string" ? nested : undefined;
 };
 
-const CACHE_DIR = join(tmpdir(), "beatsync_youtube_cache");
 const COOKIES_FILE = path.join(process.cwd(), "cookies.txt");
-const YOUTUBE_CACHE_PREFIX = "youtube-cache";
-const AUDIO_FORMAT = "bestaudio[ext=m4a][abr<=160]/bestaudio[ext=m4a]/bestaudio[abr<=160]/bestaudio";
-
-// Ensure cache directory exists on startup
-mkdir(CACHE_DIR, { recursive: true }).catch(console.error);
+const STREAM_PATH_PREFIX = "/stream/youtube";
+const STREAM_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
+const RANGE_VALIDATION_CHUNK_SIZE = 1024 * 1024;
+const MAX_TITLE_LENGTH = 120;
+const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 
 export class YoutubeManager {
   private innertube: Innertube | null = null;
-  private cacheJobs = new Map<string, Promise<{ cacheKey: string; title: string }>>();
+  private streamInnertubePromise: Promise<Innertube> | null = null;
+  private streamCache = new Map<string, YoutubeStreamInfo>();
+  private streamJobs = new Map<string, Promise<YoutubeStreamInfo>>();
 
   private async getInnertube(): Promise<Innertube> {
     this.innertube ??= await Innertube.create();
@@ -64,14 +69,30 @@ export class YoutubeManager {
         const parts = parsed.pathname.split("/").filter(Boolean);
         if (["shorts", "embed", "live"].includes(parts[0] ?? "")) videoId = parts[1] ?? null;
       }
-      return videoId && /^[A-Za-z0-9_-]{11}$/.test(videoId) ? videoId : null;
+      return videoId && VIDEO_ID_PATTERN.test(videoId) ? videoId : null;
     } catch {
       return null;
     }
   }
 
-  private getCookieArgs(): string[] {
-    return fs.existsSync(COOKIES_FILE) ? ["--cookies", COOKIES_FILE] : [];
+  static isStreamUrl(url: string): boolean {
+    try {
+      const pathname = url.startsWith("http") ? new URL(url).pathname : url.split(/[?#]/, 1)[0];
+      return new RegExp(`^${STREAM_PATH_PREFIX}/[A-Za-z0-9_-]{11}(?:/|$)`).test(pathname);
+    } catch {
+      return false;
+    }
+  }
+
+  static getStreamUrl(videoId: string, title: string): string {
+    const safeTitle =
+      title
+        .replace(/[/\\?%*:|"<>]/g, "-")
+        .replace(/\s+/g, " ")
+        .trim()
+        .slice(0, MAX_TITLE_LENGTH) || "YouTube Track";
+    const stamp = Date.now().toString(36);
+    return `${STREAM_PATH_PREFIX}/${videoId}/${encodeURIComponent(safeTitle)}${R2_AUDIO_FILE_NAME_DELIMITER}${stamp}.m4a`;
   }
 
   private getExtractorArgs(): string[] {
@@ -81,122 +102,250 @@ export class YoutubeManager {
     return ["--extractor-args", `youtube:player_client=${playerClient}`];
   }
 
-  /**
-   * Runs yt-dlp to extract the title and download the full m4a audio stream
-   * concurrently. Saves the stream directly to disk.
-   */
-  private async extractTitleAndDownload(youtubeUrl: string, videoId: string): Promise<{ title: string; filePath: string }> {
-    const filePath = join(CACHE_DIR, `${videoId}.m4a`);
-    const configuredConcurrency = process.env.YT_DLP_CONCURRENT_FRAGMENTS?.trim();
-    const concurrentFragments = configuredConcurrency && /^\d+$/.test(configuredConcurrency) ? configuredConcurrency : "4";
-    const baseArgs = [
-      "yt-dlp",
-      "-o",
-      filePath,
-      "-f",
-      AUDIO_FORMAT,
-      "--print",
-      "after_move:%(title)s",
-      "--no-playlist",
-      "--no-warnings",
-      "--no-progress",
-      "--no-part",
-      "--retries",
-      "3",
-      "--fragment-retries",
-      "3",
-      "--concurrent-fragments",
-      concurrentFragments,
-    ];
+  private readCookieHeader(): string | undefined {
+    try {
+      if (!fs.existsSync(COOKIES_FILE)) return undefined;
 
-    // Public videos should not depend on account cookies. Retry with cookies only
-    // for restricted videos, where authentication can actually be necessary.
-    const primaryExtractorArgs = this.getExtractorArgs();
-    const cookies = this.getCookieArgs();
-    const attempts = [
-      { label: "public", args: primaryExtractorArgs },
-      ...(primaryExtractorArgs.length > 0
-        ? [{ label: "embedded fallback", args: ["--extractor-args", "youtube:player_client=web_embedded"] }]
-        : []),
-      ...(cookies.length > 0 ? [{ label: "authenticated", args: [...primaryExtractorArgs, ...cookies] }] : []),
-    ];
-    let lastError = "unknown error";
+      const pairs = new Map<string, string>();
+      for (const rawLine of fs.readFileSync(COOKIES_FILE, "utf8").split(/\r?\n/)) {
+        let line = rawLine.trim();
+        if (!line) continue;
+        if (line.startsWith("#HttpOnly_")) line = line.slice("#HttpOnly_".length);
+        if (line.startsWith("#")) continue;
 
-    for (const attempt of attempts) {
-      await unlink(filePath).catch(() => undefined);
-      const proc = Bun.spawn([...baseArgs, ...attempt.args, youtubeUrl], { stdout: "pipe", stderr: "pipe" });
+        const parts = line.split("\t");
+        if (parts.length < 7) continue;
+
+        const domain = parts[0].replace(/^\./, "").toLowerCase();
+        if (domain !== "youtube.com" && !domain.endsWith(".youtube.com")) continue;
+        pairs.set(parts[5], parts[6]);
+      }
+
+      if (pairs.size === 0) return undefined;
+      return Array.from(pairs, ([name, value]) => `${name}=${value}`).join("; ");
+    } catch (error) {
+      console.warn("[YouTube] Failed to read cookies.txt:", error);
+      return undefined;
+    }
+  }
+
+  private async createStreamInnertube(): Promise<Innertube> {
+    const cookie = this.readCookieHeader();
+    const options = {
+      client_type: ClientType.IOS,
+      retrieve_player: false,
+      generate_session_locally: true,
+    };
+
+    if (!cookie) return Innertube.create(options);
+
+    try {
+      return await Innertube.create({ ...options, cookie });
+    } catch (error) {
+      console.warn("[YouTube] Cookie-authenticated stream session failed, retrying anonymously:", error);
+      return Innertube.create(options);
+    }
+  }
+
+  private getStreamInnertube(): Promise<Innertube> {
+    this.streamInnertubePromise ??= this.createStreamInnertube().catch((error) => {
+      this.streamInnertubePromise = null;
+      throw error;
+    });
+    return this.streamInnertubePromise;
+  }
+
+  private async isFullyRangeable(url: string, contentLength: number): Promise<boolean> {
+    const offsets = [0];
+    if (contentLength > RANGE_VALIDATION_CHUNK_SIZE) {
+      offsets.push(RANGE_VALIDATION_CHUNK_SIZE);
+      offsets.push(contentLength - 1024);
+    }
+
+    const results = await Promise.all(
+      offsets.map(async (offset) => {
+        try {
+          const end = contentLength > 0 ? Math.min(offset + 1023, contentLength - 1) : offset + 1023;
+          const response = await fetch(url, {
+            method: "HEAD",
+            headers: { Range: `bytes=${offset}-${end}` },
+            signal: AbortSignal.timeout(5000),
+          });
+          await response.body?.cancel();
+          return response.status === 206 || response.status === 200;
+        } catch {
+          return false;
+        }
+      })
+    );
+
+    return results.every(Boolean);
+  }
+
+  private async resolveYtDlpStreamUrl(videoId: string, mimeType: string): Promise<string> {
+    const extension = mimeType.startsWith("audio/webm") ? "webm" : "m4a";
+    const selectors = [`bestaudio[ext=${extension}]`, "bestaudio"];
+
+    for (const selector of selectors) {
+      const args = [
+        "yt-dlp",
+        "-g",
+        "-f",
+        selector,
+        "--no-playlist",
+        "--no-warnings",
+        "--extractor-args",
+        "youtube:player_client=visionos",
+      ];
+      if (fs.existsSync(COOKIES_FILE)) args.push("--cookies", COOKIES_FILE);
+      args.push(`https://www.youtube.com/watch?v=${videoId}`);
+
+      const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
       const [stdout, stderr, exitCode] = await Promise.all([
         new Response(proc.stdout).text(),
         new Response(proc.stderr).text(),
         proc.exited,
       ]);
-      if (exitCode === 0 && fs.existsSync(filePath)) {
-        const outputLines = stdout.trim().split("\n");
-        const extractedTitle = outputLines[outputLines.length - 1]?.trim();
-        return { title: extractedTitle?.length ? extractedTitle : "YouTube Track", filePath };
-      }
-      lastError = stderr.trim();
-      if (lastError.length === 0) lastError = `exit ${exitCode}`;
-      console.warn(`[YouTube] ${attempt.label} yt-dlp attempt failed: ${lastError}`);
+
+      const url = stdout
+        .split("\n")
+        .map((line) => line.trim())
+        .find((line) => line.startsWith("http"));
+
+      if (exitCode === 0 && url) return url;
+      console.warn(`[YouTube] yt-dlp fallback (${selector}) failed for ${videoId}: ${stderr.trim()}`);
     }
 
-    throw new Error(`yt-dlp audio download failed: ${lastError}`);
+    throw new Error(`Unable to resolve a rangeable stream URL for YouTube video ${videoId}`);
   }
 
-  private async ensureCached(youtubeUrl: string, videoId: string): Promise<{ cacheKey: string; title: string }> {
-    const existingJob = this.cacheJobs.get(videoId);
+  private async probeContentLength(url: string, fallback: number): Promise<number> {
+    try {
+      const response = await fetch(url, {
+        method: "HEAD",
+        headers: { Range: "bytes=0-0" },
+        signal: AbortSignal.timeout(5000),
+      });
+      await response.body?.cancel();
+      const match = /\/(\d+)$/.exec(response.headers.get("content-range") ?? "");
+      return match ? Number(match[1]) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  private async resolveStreamInfo(videoId: string): Promise<YoutubeStreamInfo> {
+    const yt = await this.getStreamInnertube();
+    const info = await yt.getBasicInfo(videoId);
+
+    if (info.playability_status?.status && info.playability_status.status !== "OK") {
+      throw new Error(`YouTube video ${videoId} is not playable: ${info.playability_status.status}`);
+    }
+
+    const audioFormats = (info.streaming_data?.adaptive_formats ?? []).filter(
+      (format) =>
+        format.has_audio && !format.has_video && !format.is_drc && !format.is_vb && format.is_original !== false
+    );
+
+    const m4aFormats = audioFormats
+      .filter((format) => format.mime_type.startsWith("audio/mp4"))
+      .sort((a, b) => b.bitrate - a.bitrate);
+
+    const preferred =
+      m4aFormats.find((format) => format.bitrate <= 160_000) ??
+      m4aFormats[0] ??
+      audioFormats.sort((a, b) => b.bitrate - a.bitrate)[0];
+
+    const format = preferred ?? info.chooseFormat({ type: "audio", format: "mp4", quality: "best" });
+
+    let formatUrl = format.url;
+    if (!formatUrl && (format.signature_cipher || format.cipher)) {
+      formatUrl = await format.decipher(info.actions.session.player);
+    }
+    if (!formatUrl) throw new Error(`No stream URL available for YouTube video ${videoId}`);
+
+    const parsedUrl = new URL(formatUrl);
+    if (!/(^|\.)(googlevideo\.com|youtube\.com)$/.test(parsedUrl.hostname)) {
+      throw new Error(`YouTube returned an unexpected stream host: ${parsedUrl.hostname}`);
+    }
+    parsedUrl.searchParams.set("cpn", info.cpn);
+
+    let streamUrl = parsedUrl.toString();
+    let mimeType = format.mime_type.split(";")[0] || "audio/mp4";
+    let contentLength = format.content_length ?? 0;
+
+    // Some iOS-client URLs only serve their first ~1 MiB and then return 403.
+    // Fall back to a yt-dlp visionOS URL, which is fully rangeable.
+    if (!(await this.isFullyRangeable(streamUrl, contentLength))) {
+      console.warn(`[YouTube] iOS stream for ${videoId} is range-limited; resolving with yt-dlp`);
+      const fallbackUrl = await this.resolveYtDlpStreamUrl(videoId, mimeType);
+      const fallbackHost = new URL(fallbackUrl).hostname;
+      if (!/(^|\.)(googlevideo\.com|youtube\.com)$/.test(fallbackHost)) {
+        throw new Error(`yt-dlp returned an unexpected stream host: ${fallbackHost}`);
+      }
+
+      contentLength = await this.probeContentLength(fallbackUrl, contentLength);
+      streamUrl = fallbackUrl;
+
+      const fallbackMime = new URL(fallbackUrl).searchParams.get("mime");
+      if (fallbackMime) {
+        try {
+          mimeType = decodeURIComponent(fallbackMime);
+        } catch {
+          // Keep the original MIME type if YouTube's value is malformed.
+        }
+      }
+    }
+
+    const expireMs = Number(new URL(streamUrl).searchParams.get("expire")) * 1000;
+    const expiresAt =
+      Number.isFinite(expireMs) && expireMs > 0
+        ? Math.min(expireMs - 5 * 60 * 1000, Date.now() + STREAM_CACHE_TTL_MS)
+        : Date.now() + STREAM_CACHE_TTL_MS;
+    const title = info.basic_info.title?.trim();
+
+    return {
+      url: streamUrl,
+      mimeType,
+      contentLength,
+      title: title?.length ? title : "YouTube Track",
+      expiresAt,
+    };
+  }
+
+  async getStreamInfo(videoId: string, options: { force?: boolean } = {}): Promise<YoutubeStreamInfo> {
+    if (!VIDEO_ID_PATTERN.test(videoId)) throw new Error(`Invalid YouTube video ID: ${videoId}`);
+
+    if (options.force) this.streamCache.delete(videoId);
+
+    const cached = this.streamCache.get(videoId);
+    if (cached && cached.expiresAt > Date.now()) return cached;
+
+    const existingJob = this.streamJobs.get(videoId);
     if (existingJob) return existingJob;
 
-    const job = (async () => {
-      const cacheKey = `${YOUTUBE_CACHE_PREFIX}/${videoId}.m4a`;
-      const cached = await getObjectInfo(cacheKey);
-      if (cached.exists) {
-        console.log(`[YouTube] R2 cache hit for ${videoId}`);
-        let title = "YouTube Track";
-        if (cached.metadata.title) {
-          try {
-            title = decodeURIComponent(cached.metadata.title);
-          } catch {
-            title = cached.metadata.title;
-          }
-        }
-        return { cacheKey, title };
-      }
+    const job = this.resolveStreamInfo(videoId)
+      .then((info) => {
+        this.streamCache.set(videoId, info);
+        return info;
+      })
+      .finally(() => {
+        this.streamJobs.delete(videoId);
+      });
 
-      const { title, filePath } = await this.extractTitleAndDownload(youtubeUrl, videoId);
-      try {
-        console.log(`[YouTube] Caching "${title}" in R2...`);
-        // S3 user metadata headers must be ASCII-safe.
-        await uploadFileToKey(filePath, cacheKey, "audio/mp4", { title: encodeURIComponent(title) });
-        return { cacheKey, title };
-      } finally {
-        await unlink(filePath).catch((err) => console.error(`[YouTube] Failed to delete ${filePath}:`, err));
-      }
-    })();
-
-    this.cacheJobs.set(videoId, job);
-    try {
-      return await job;
-    } finally {
-      this.cacheJobs.delete(videoId);
-    }
+    this.streamJobs.set(videoId, job);
+    return job;
   }
 
-  /**
-   * Extracts audio info & downloads it for a YouTube URL, uploads it directly to R2,
-   * cleans up the local cache, and returns the R2 public URL.
-   */
-  async addStreamAndUpload(youtubeUrl: string, roomId: string): Promise<{ publicUrl: string; title: string }> {
-    console.log(`[YouTube] Downloading & extracting stream for: ${youtubeUrl}`);
+  /** Resolves a YouTube URL to a stable local streaming URL for a room queue. */
+  async getStreamSource(youtubeUrl: string): Promise<{ publicUrl: string; title: string }> {
     const videoId = YoutubeManager.getVideoId(youtubeUrl);
     if (!videoId) throw new Error("Unable to determine YouTube video ID");
 
-    const { cacheKey, title } = await this.ensureCached(youtubeUrl, videoId);
-    const fileName = generateAudioFileName(`${title}.m4a`);
-    const roomKey = createKey(roomId, fileName);
-    const publicUrl = await copyObject(cacheKey, roomKey);
-    console.log(`[YouTube] Ready from cache "${title}": ${publicUrl}`);
-    return { publicUrl, title };
+    const info = await this.getStreamInfo(videoId);
+    const publicUrl = YoutubeManager.getStreamUrl(videoId, info.title);
+    console.log(`[YouTube] Streaming "${info.title}" via ${publicUrl}`);
+    return { publicUrl, title: info.title };
   }
 
   /**

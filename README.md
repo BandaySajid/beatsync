@@ -42,9 +42,9 @@ bun dev              # starts both client (:3000) and server (:8080)
 
 ## YouTube Search & Streaming (Production)
 
-Beatsync natively integrates YouTube search directly into the dashboard using `youtubei.js` for blazing-fast lookups, and falls back to `yt-dlp` for streaming audio flawlessly to R2.
+Beatsync natively integrates YouTube search directly into the dashboard using `youtubei.js`. Audio is resolved through `youtubei.js` and proxied from the server at `/stream/youtube/:videoId/...`, so tracks play without downloading to R2 first. The proxy forwards HTTP Range requests for seeking and re-resolves expired YouTube URLs automatically.
 
-If you are running the server in **production** (e.g. Ubuntu, Docker), YouTube's bot detection will block `yt-dlp` audio extraction. To bypass this, you must export your browser cookies:
+If you are running the server in **production** (e.g. Ubuntu, Docker) and YouTube requires authentication for a video, export your browser cookies:
 
 1. Install the [Get cookies.txt LOCALLY](https://chromewebstore.google.com/detail/get-cookiestxt-locally/ccpffkphkjlhlpebgcpmkoaignbobbdd) extension in your browser.
 2. Visit YouTube and ensure you are logged in and no captchas are pending.

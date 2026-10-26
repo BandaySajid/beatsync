@@ -44,8 +44,8 @@ export const handleAddYoutubeUrl: HandlerFunction<ExtractWSRequestFrom["ADD_YOUT
   });
 
   try {
-    console.log(`[YouTube] Extracting stream for: ${youtubeUrl}`);
-    const { publicUrl, title } = await YOUTUBE_MANAGER.addStreamAndUpload(youtubeUrl, roomId);
+    console.log(`[YouTube] Resolving stream for: ${youtubeUrl}`);
+    const { publicUrl, title } = await YOUTUBE_MANAGER.getStreamSource(youtubeUrl);
 
     const sources = room.addAudioSource({ url: publicUrl });
 

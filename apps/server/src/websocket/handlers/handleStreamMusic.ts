@@ -41,14 +41,14 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
   });
 
   try {
-    let r2Url: string;
+    let audioUrl: string;
 
     if (typeof message.trackId === "string") {
       // It's a YouTube track
       const ytUrl = `https://youtube.com/watch?v=${message.trackId}`;
       console.log(`Processing YouTube search result stream: ${ytUrl}`);
-      const result = await YOUTUBE_MANAGER.addStreamAndUpload(ytUrl, roomId);
-      r2Url = result.publicUrl;
+      const result = await YOUTUBE_MANAGER.getStreamSource(ytUrl);
+      audioUrl = result.publicUrl;
     } else {
       // It's an Apple Music / Qobuz track
       const streamResponse = await MUSIC_PROVIDER_MANAGER.stream(message.trackId);
@@ -81,13 +81,13 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
 
       // Upload directly to R2
       console.log(`Uploading to R2: room-${roomId}/${fileName}`);
-      r2Url = await uploadBytes(arrayBuffer, roomId, fileName, contentType);
+      audioUrl = await uploadBytes(arrayBuffer, roomId, fileName, contentType);
     }
 
     // Add the audio source to the room and get updated sources list
-    const sources = room.addAudioSource({ url: r2Url });
+    const sources = room.addAudioSource({ url: audioUrl });
 
-    console.log(`Successfully uploaded track to R2: ${r2Url}`);
+    console.log(`Successfully added audio source: ${audioUrl}`);
     console.log(`Broadcasting new audio sources to room ${roomId}: ${sources.length} total sources`);
 
     // Broadcast to all room members that new audio is available

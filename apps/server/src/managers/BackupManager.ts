@@ -10,6 +10,7 @@ import {
 } from "@/lib/r2";
 import { globalManager } from "@/managers/GlobalManager";
 import type { RoomBackupType, ServerBackupType } from "@/managers/RoomManager";
+import { YoutubeManager } from "@/managers/YoutubeManager";
 import { ServerBackupSchema } from "@/managers/RoomManager";
 
 interface RoomRestoreResult {
@@ -34,8 +35,11 @@ export class BackupManager {
     try {
       const room = globalManager.getOrCreateRoom(roomId);
 
-      // Concurrently validate all audio sources in R2 (no limit on concurrency)
-      const validationPromises = roomData.audioSources.map((source) => validateAudioFileExists(source.url));
+      // Concurrently validate all audio sources in R2 (no limit on concurrency).
+      // YouTube proxy URLs are resolved on demand, so they only need a shape check.
+      const validationPromises = roomData.audioSources.map((source) =>
+        YoutubeManager.isStreamUrl(source.url) ? Promise.resolve(true) : validateAudioFileExists(source.url)
+      );
       const validationResults = await Promise.all(validationPromises);
 
       // Filter out audio sources that are not valid

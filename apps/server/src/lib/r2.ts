@@ -23,7 +23,7 @@ const S3_CONFIG = {
   SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY!,
 };
 
-const r2Client = new S3Client({
+export const r2Client = new S3Client({
   region: "auto",
   endpoint: S3_CONFIG.ENDPOINT,
   credentials: {

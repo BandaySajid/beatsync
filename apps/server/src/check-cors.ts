@@ -47,4 +47,4 @@ async function check() {
     console.error("Error setting CORS:", e);
   }
 }
-check();
+void check();
