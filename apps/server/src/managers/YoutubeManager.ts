@@ -17,6 +17,12 @@ export interface YoutubeStreamInfo {
   contentLength: number;
   title: string;
   expiresAt: number;
+  mode: "proxy" | "pipe";
+}
+
+export interface PipedAudioStream {
+  stream: ReadableStream<Uint8Array>;
+  kill: () => void;
 }
 
 const asRecord = (value: unknown): Record<string, unknown> | null =>
@@ -167,12 +173,11 @@ export class YoutubeManager {
         try {
           const end = contentLength > 0 ? Math.min(offset + 1023, contentLength - 1) : offset + 1023;
           const response = await fetch(url, {
-            method: "HEAD",
             headers: { Range: `bytes=${offset}-${end}` },
             signal: AbortSignal.timeout(5000),
           });
-          await response.body?.cancel();
-          return response.status === 206 || response.status === 200;
+          const body = await response.arrayBuffer();
+          return (response.status === 206 || response.status === 200) && body.byteLength > 0;
         } catch {
           return false;
         }
@@ -182,56 +187,43 @@ export class YoutubeManager {
     return results.every(Boolean);
   }
 
-  private async resolveYtDlpStreamUrl(videoId: string, mimeType: string): Promise<string> {
+  /** Streams yt-dlp's stdout directly to the caller, without touching disk or R2. */
+  createPipedAudioStream(videoId: string, mimeType: string): PipedAudioStream {
     const extension = mimeType.startsWith("audio/webm") ? "webm" : "m4a";
-    const selectors = [`bestaudio[ext=${extension}]`, "bestaudio"];
+    const args = [
+      "yt-dlp",
+      "-o",
+      "-",
+      "-f",
+      `bestaudio[ext=${extension}][abr<=160]/bestaudio[ext=${extension}]/bestaudio`,
+      "--no-playlist",
+      "--no-warnings",
+      "--no-progress",
+      "--extractor-args",
+      "youtube:player_client=mweb",
+    ];
+    if (fs.existsSync(COOKIES_FILE)) args.push("--cookies", COOKIES_FILE);
+    args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
-    for (const selector of selectors) {
-      const args = [
-        "yt-dlp",
-        "-g",
-        "-f",
-        selector,
-        "--no-playlist",
-        "--no-warnings",
-        "--extractor-args",
-        "youtube:player_client=visionos",
-      ];
-      if (fs.existsSync(COOKIES_FILE)) args.push("--cookies", COOKIES_FILE);
-      args.push(`https://www.youtube.com/watch?v=${videoId}`);
+    const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
 
-      const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
+    void new Response(proc.stderr).text().then((stderr) => {
+      if (stderr.trim()) console.warn(`[YouTube] yt-dlp pipe output for ${videoId}: ${stderr.trim()}`);
+    });
+    void proc.exited.then((code) => {
+      if (code !== 0) console.warn(`[YouTube] yt-dlp pipe exited with ${code} for ${videoId}`);
+    });
 
-      const url = stdout
-        .split("\n")
-        .map((line) => line.trim())
-        .find((line) => line.startsWith("http"));
-
-      if (exitCode === 0 && url) return url;
-      console.warn(`[YouTube] yt-dlp fallback (${selector}) failed for ${videoId}: ${stderr.trim()}`);
-    }
-
-    throw new Error(`Unable to resolve a rangeable stream URL for YouTube video ${videoId}`);
-  }
-
-  private async probeContentLength(url: string, fallback: number): Promise<number> {
-    try {
-      const response = await fetch(url, {
-        method: "HEAD",
-        headers: { Range: "bytes=0-0" },
-        signal: AbortSignal.timeout(5000),
-      });
-      await response.body?.cancel();
-      const match = /\/(\d+)$/.exec(response.headers.get("content-range") ?? "");
-      return match ? Number(match[1]) : fallback;
-    } catch {
-      return fallback;
-    }
+    return {
+      stream: proc.stdout,
+      kill: () => {
+        try {
+          proc.kill();
+        } catch {
+          // Process already exited.
+        }
+      },
+    };
   }
 
   private async resolveStreamInfo(videoId: string): Promise<YoutubeStreamInfo> {
@@ -270,39 +262,23 @@ export class YoutubeManager {
     }
     parsedUrl.searchParams.set("cpn", info.cpn);
 
-    let streamUrl = parsedUrl.toString();
-    let mimeType = format.mime_type.split(";")[0] || "audio/mp4";
-    let contentLength = format.content_length ?? 0;
+    const streamUrl = parsedUrl.toString();
+    const mimeType = format.mime_type.split(";")[0] || "audio/mp4";
+    const contentLength = format.content_length ?? 0;
+    const title = info.basic_info.title?.trim();
 
     // Some iOS-client URLs only serve their first ~1 MiB and then return 403.
-    // Fall back to a yt-dlp visionOS URL, which is fully rangeable.
-    if (!(await this.isFullyRangeable(streamUrl, contentLength))) {
-      console.warn(`[YouTube] iOS stream for ${videoId} is range-limited; resolving with yt-dlp`);
-      const fallbackUrl = await this.resolveYtDlpStreamUrl(videoId, mimeType);
-      const fallbackHost = new URL(fallbackUrl).hostname;
-      if (!/(^|\.)(googlevideo\.com|youtube\.com)$/.test(fallbackHost)) {
-        throw new Error(`yt-dlp returned an unexpected stream host: ${fallbackHost}`);
-      }
-
-      contentLength = await this.probeContentLength(fallbackUrl, contentLength);
-      streamUrl = fallbackUrl;
-
-      const fallbackMime = new URL(fallbackUrl).searchParams.get("mime");
-      if (fallbackMime) {
-        try {
-          mimeType = decodeURIComponent(fallbackMime);
-        } catch {
-          // Keep the original MIME type if YouTube's value is malformed.
-        }
-      }
+    // Those videos stream through yt-dlp's stdout instead of the range proxy.
+    const mode = (await this.isFullyRangeable(streamUrl, contentLength)) ? "proxy" : "pipe";
+    if (mode === "pipe") {
+      console.warn(`[YouTube] Stream for ${videoId} is range-limited; using yt-dlp pipe fallback`);
     }
 
-    const expireMs = Number(new URL(streamUrl).searchParams.get("expire")) * 1000;
+    const expireMs = Number(parsedUrl.searchParams.get("expire")) * 1000;
     const expiresAt =
-      Number.isFinite(expireMs) && expireMs > 0
+      mode === "proxy" && Number.isFinite(expireMs) && expireMs > 0
         ? Math.min(expireMs - 5 * 60 * 1000, Date.now() + STREAM_CACHE_TTL_MS)
         : Date.now() + STREAM_CACHE_TTL_MS;
-    const title = info.basic_info.title?.trim();
 
     return {
       url: streamUrl,
@@ -310,6 +286,7 @@ export class YoutubeManager {
       contentLength,
       title: title?.length ? title : "YouTube Track",
       expiresAt,
+      mode,
     };
   }
 

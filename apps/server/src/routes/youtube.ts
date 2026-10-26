@@ -160,6 +160,20 @@ function baseResponseHeaders(info: YoutubeStreamInfo): Headers {
   });
 }
 
+function handlePipedAudio(videoId: string, info: YoutubeStreamInfo, req: Request): Response {
+  const headers = baseResponseHeaders(info);
+  headers.delete("Content-Length");
+  headers.set("Accept-Ranges", "none");
+
+  if (req.method === "HEAD") return new Response(null, { status: 200, headers });
+  if (req.signal.aborted) return errorResponse("Request aborted", 499);
+
+  const piped = YOUTUBE_MANAGER.createPipedAudioStream(videoId, info.mimeType);
+  req.signal.addEventListener("abort", piped.kill, { once: true });
+
+  return new Response(piped.stream, { status: 200, headers });
+}
+
 async function handleFullAudio(videoId: string, info: YoutubeStreamInfo, req: Request): Promise<Response> {
   let currentInfo = info;
   let totalBytes = currentInfo.contentLength;
@@ -276,6 +290,8 @@ export async function handleYoutubeAudio(videoId: string, req: Request): Promise
 
   try {
     const info = await YOUTUBE_MANAGER.getStreamInfo(videoId);
+    if (info.mode === "pipe") return handlePipedAudio(videoId, info, req);
+
     const rangeHeader = req.headers.get("range");
 
     if (!rangeHeader) return await handleFullAudio(videoId, info, req);
