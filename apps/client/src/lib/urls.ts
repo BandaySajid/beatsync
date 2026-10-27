@@ -14,11 +14,7 @@ function resolve(): { apiUrl: string; wsUrl: string } {
   const envWs = process.env.NEXT_PUBLIC_WS_URL;
 
   if (envApi && envWs) {
-    const formattedWs = envWs.endsWith("/ws")
-      ? envWs
-      : envWs.endsWith("/")
-      ? `${envWs}ws`
-      : `${envWs}/ws`;
+    const formattedWs = envWs.endsWith("/ws") ? envWs : envWs.endsWith("/") ? `${envWs}ws` : `${envWs}/ws`;
     cached = { apiUrl: envApi, wsUrl: formattedWs };
   } else if (typeof window !== "undefined") {
     const { protocol, host } = window.location;
