@@ -26,7 +26,6 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
 
   // WebSocket state (message handling lives in @/websocket/registry)
   const setSocket = useGlobalStore((state) => state.setSocket);
-  const socket = useGlobalStore((state) => state.socket);
 
   // Use the NTP heartbeat hook
   const { startHeartbeat, stopHeartbeat, markNTPResponseReceived } = useNtpHeartbeat({
@@ -58,17 +57,25 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
   const creatorParam = creatorSecret ? `&creator=${encodeURIComponent(creatorSecret)}` : "";
 
   const createConnection = () => {
+    // Never tear down a healthy connection. The effect, bfcache handler and
+    // reconnect hook can all fire around the same moment; only one socket wins.
+    const previous = useGlobalStore.getState().socket;
+    if (previous && (previous.readyState === WebSocket.OPEN || previous.readyState === WebSocket.CONNECTING)) {
+      console.log("WebSocket already open/connecting; reusing it");
+      return previous;
+    }
+
     const SOCKET_URL = `${getWsUrl()}?roomId=${roomId}&username=${username}&clientId=${clientId}${adminParam}${creatorParam}`;
     console.log("Creating new WS connection to", SOCKET_URL);
 
     // Clear previous connection if it exists
-    if (socket) {
+    if (previous) {
       console.log("Clearing previous connection");
-      socket.onclose = () => {};
-      socket.onerror = () => {};
-      socket.onmessage = () => {};
-      socket.onopen = () => {};
-      socket.close();
+      previous.onclose = () => {};
+      previous.onerror = () => {};
+      previous.onmessage = () => {};
+      previous.onopen = () => {};
+      previous.close();
     }
 
     const ws = new WebSocket(SOCKET_URL);
@@ -83,6 +90,15 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
 
       // Start NTP heartbeat
       startHeartbeat();
+
+      // A reconnect (or bfcache restore) must catch up with the room: if the
+      // session was already running, resume the synchronized playback state.
+      if (useGlobalStore.getState().hasUserStartedSystem) {
+        sendWSRequest({
+          ws,
+          request: { type: ClientActionEnum.enum.SYNC },
+        });
+      }
 
       // Skip IP geolocation in demo mode (no internet)
       if (!IS_DEMO_MODE) {
@@ -107,6 +123,10 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
     // - Server restart
     // So we should try to reconnect.
     ws.onclose = () => {
+      // A superseded socket closing must not trigger reconnection over the
+      // healthy replacement socket.
+      if (useGlobalStore.getState().socket !== ws) return;
+
       console.log("Websocket closed unexpectedly");
       // Stop NTP heartbeat
       stopHeartbeat();
@@ -123,8 +143,13 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
       // Update last message received time for connection health
       useGlobalStore.setState({ lastMessageReceivedTime: Date.now() });
 
-      const response = WSResponseSchema.parse(JSON.parse(msg.data));
-      dispatchWSResponse({ response, context });
+      try {
+        const response = WSResponseSchema.parse(JSON.parse(msg.data));
+        dispatchWSResponse({ response, context });
+      } catch (error) {
+        // One malformed/unexpected message must not break the message loop.
+        console.error("Failed to process WebSocket message:", error);
+      }
     };
 
     return ws;
@@ -136,7 +161,8 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
     if (isLoadingRoom || !roomId || !username || !clientId) return;
 
     // Don't create a new connection if we already have one
-    if (socket) {
+    const existingSocket = useGlobalStore.getState().socket;
+    if (existingSocket && existingSocket.readyState === WebSocket.OPEN) {
       return;
     }
 
@@ -182,14 +208,25 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
       // Clean up reconnection state
       cleanupReconnection();
 
-      // Clear the onclose handler to prevent reconnection attempts - this is an intentional close
-      ws.onclose = () => {
-        console.log("Websocket closed by cleanup");
-      };
+      // Close the current socket (the one from mount may have been replaced by
+      // a reconnect) and make sure its close doesn't schedule another retry.
+      const currentSocket = useGlobalStore.getState().socket;
+      if (currentSocket) {
+        currentSocket.onclose = () => {
+          console.log("Websocket closed by cleanup");
+        };
+        currentSocket.onerror = () => {};
+        currentSocket.onmessage = () => {};
+        currentSocket.onopen = () => {};
+        currentSocket.close();
+      }
+      if (ws && ws !== currentSocket) {
+        ws.onclose = () => {};
+        ws.close();
+      }
 
       // Stop NTP heartbeat
       stopHeartbeat();
-      ws.close();
     };
     // Not including socket in the dependency array because it will trigger the close when it's set
     // eslint-disable-next-line react-hooks/exhaustive-deps

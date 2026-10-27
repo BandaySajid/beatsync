@@ -29,6 +29,16 @@ export const resetProbeState = () => {
   impureCount = 0;
 };
 
+/**
+ * Drop only the in-flight probe pair. Used on reconnect: measurements and the
+ * clock offset stay valid, but the first half of a pair was answered on the old
+ * socket, so it must not be paired with a probe from the new one.
+ */
+export const resetPendingProbe = () => {
+  pendingFirstProbe = null;
+  pendingFirstProbeGroupId = null;
+};
+
 /** Get probe pair stats for debugging */
 export const getProbeStats = () => ({
   totalPairs: pureCount + impureCount,

@@ -1,5 +1,6 @@
 import { ClientActionEnum } from "@beatsync/shared";
 import { handleAudioSourceLoaded } from "@/websocket/handlers/handleAudioSourceLoaded";
+import { handleAudioSourceLoadFailed } from "@/websocket/handlers/handleAudioSourceLoadFailed";
 import { handleDeleteAudioSources } from "@/websocket/handlers/handleDeleteAudioSources";
 import { handleLoadDefaultTracks } from "@/websocket/handlers/handleLoadDefaultTracks";
 import { handleSearchMusic } from "@/websocket/handlers/handleSearchMusic";
@@ -29,6 +30,10 @@ export const WS_REGISTRY: WebsocketRegistry = {
   [ClientActionEnum.enum.AUDIO_SOURCE_LOADED]: {
     handle: handleAudioSourceLoaded,
     description: "Audio source loaded event",
+  },
+  [ClientActionEnum.enum.AUDIO_SOURCE_LOAD_FAILED]: {
+    handle: handleAudioSourceLoadFailed,
+    description: "Audio source failed to load after client retries",
   },
   [ClientActionEnum.enum.NTP_REQUEST]: {
     handle: handleNTPRequest,

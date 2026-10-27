@@ -10,6 +10,7 @@ import {
   calculateWaitTimeMilliseconds,
   getProbeStats,
   NTPMeasurement,
+  resetPendingProbe,
   resetProbeState,
   sendProbePair as sendProbePairWS,
 } from "@/utils/ntp";
@@ -349,40 +350,106 @@ const getWaitTimeSeconds = (state: GlobalState, targetServerTime: number) => {
 
 const resolveAudioUrl = (url: string): string => (url.startsWith("/") ? `${getApiUrl()}${url}` : url);
 
-const downloadBufferFromURL = async (data: { url: string; onProgress?: (loaded: number, total: number) => void }) => {
-  const response = await fetch(resolveAudioUrl(data.url));
-  const contentLength = Number(response.headers.get("content-length") ?? 0);
+const AUDIO_DOWNLOAD_ATTEMPTS = 3;
+const AUDIO_DOWNLOAD_RETRY_DELAY_MS = 500;
+// A stalled stream (server wedged, tunnel dead, CDN hanging mid-body) must not
+// leave a track "loading" forever — abort and retry instead.
+const AUDIO_DOWNLOAD_STALL_TIMEOUT_MS = 20_000;
 
-  let arrayBuffer: ArrayBuffer;
-  if (contentLength > 0 && response.body && data.onProgress) {
-    // Stream with progress tracking
-    const reader = response.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let loaded = 0;
-    data.onProgress(0, contentLength);
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      chunks.push(value);
-      loaded += value.byteLength;
-      data.onProgress(loaded, contentLength);
+const downloadBufferFromURL = async (data: {
+  url: string;
+  onProgress?: (loaded: number, total: number) => void;
+  signal?: AbortSignal;
+}) => {
+  const resolvedUrl = resolveAudioUrl(data.url);
+  let lastError: unknown = new Error("Audio download failed");
+
+  for (let attempt = 1; attempt <= AUDIO_DOWNLOAD_ATTEMPTS; attempt++) {
+    const controller = new AbortController();
+    const abortFromCaller = () => controller.abort(data.signal?.reason);
+    if (data.signal?.aborted) throw data.signal.reason ?? new Error("Audio download aborted");
+    data.signal?.addEventListener("abort", abortFromCaller, { once: true });
+
+    let stallTimer: ReturnType<typeof setTimeout> | null = null;
+    const armStallTimer = () => {
+      if (stallTimer) clearTimeout(stallTimer);
+      stallTimer = setTimeout(
+        () => controller.abort(new Error(`Audio download stalled for ${AUDIO_DOWNLOAD_STALL_TIMEOUT_MS}ms`)),
+        AUDIO_DOWNLOAD_STALL_TIMEOUT_MS
+      );
+    };
+
+    try {
+      armStallTimer();
+
+      const response = await fetch(resolvedUrl, { signal: controller.signal, cache: "no-store" });
+
+      if (!response.ok) {
+        const detail = await response.text().catch(() => "");
+        throw new Error(
+          `Audio request failed (${response.status} ${response.statusText})${detail ? `: ${detail.slice(0, 160)}` : ""}`
+        );
+      }
+
+      // A failed proxy/auth response can come back as HTML or JSON with a 200.
+      const contentType = (response.headers.get("content-type") ?? "").toLowerCase();
+      if (contentType.startsWith("text/") || contentType.includes("application/json")) {
+        throw new Error(`Audio request returned ${contentType} instead of audio`);
+      }
+
+      const contentLength = Number(
+        response.headers.get("content-length") ?? response.headers.get("x-audio-length") ?? 0
+      );
+      if (!response.body) throw new Error("Audio response had no body");
+
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let loaded = 0;
+      data.onProgress?.(0, contentLength);
+
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value || value.byteLength === 0) continue;
+
+        chunks.push(value);
+        loaded += value.byteLength;
+        armStallTimer();
+        data.onProgress?.(loaded, contentLength);
+      }
+
+      if (stallTimer) clearTimeout(stallTimer);
+
+      const combined = new Uint8Array(loaded);
+      let offset = 0;
+      for (const chunk of chunks) {
+        combined.set(chunk, offset);
+        offset += chunk.byteLength;
+      }
+
+      const audioBuffer = await audioContextManager.decodeAudioData(combined.buffer);
+      return { audioBuffer };
+    } catch (error) {
+      lastError = error;
+      if (data.signal?.aborted) throw error;
+
+      console.warn(
+        `[Audio] Download attempt ${attempt}/${AUDIO_DOWNLOAD_ATTEMPTS} failed for ${data.url}:`,
+        error instanceof Error ? error.message : error
+      );
+
+      if (attempt < AUDIO_DOWNLOAD_ATTEMPTS) {
+        await sleep(AUDIO_DOWNLOAD_RETRY_DELAY_MS * attempt);
+      }
+    } finally {
+      if (stallTimer) clearTimeout(stallTimer);
+      data.signal?.removeEventListener("abort", abortFromCaller);
     }
-
-    // Combine chunks into single ArrayBuffer
-    const combined = new Uint8Array(loaded);
-    let offset = 0;
-    for (const chunk of chunks) {
-      combined.set(chunk, offset);
-      offset += chunk.byteLength;
-    }
-    arrayBuffer = combined.buffer;
-  } else {
-    arrayBuffer = await response.arrayBuffer();
   }
 
-  const audioBuffer = await audioContextManager.decodeAudioData(arrayBuffer);
-  return { audioBuffer };
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 };
 
 const initializationMutex = new Mutex();
@@ -398,121 +465,201 @@ export const useCanMutate = () => {
 };
 
 export const useGlobalStore = create<GlobalState>((set, get) => {
-  // Helper function to manage LRU cache
+  // In-flight loads, keyed by URL. Coalescing prevents a second fetch when a
+  // prefetch and a scheduled play race for the same track.
+  const audioLoadPromises = new Map<string, Promise<boolean>>();
+
+  const notifyAudioLoaded = (url: string) => {
+    const socket = get().socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    sendWSRequest({
+      ws: socket,
+      request: { type: ClientActionEnum.enum.AUDIO_SOURCE_LOADED, source: { url } },
+    });
+  };
+
+  const notifyAudioLoadFailed = (url: string, message: string) => {
+    const socket = get().socket;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+    sendWSRequest({
+      ws: socket,
+      request: { type: ClientActionEnum.enum.AUDIO_SOURCE_LOAD_FAILED, source: { url }, error: message },
+    });
+  };
+
+  // Helper function to manage LRU cache. The queue tracks loaded buffers only,
+  // so it cannot grow past the cache limit when the playlist is long.
   const addURLToLRU = (url: string) => {
     const state = get();
-    const queue = [...state.bufferAccessQueue];
-
-    // Remove URL if it exists (to move it to front)
-    const existingIndex = queue.indexOf(url);
-    if (existingIndex > -1) {
-      queue.splice(existingIndex, 1);
-    }
-
-    // Add URL to front
-    queue.unshift(url);
-
-    // Determine which URLs to evict (if any) — skip eviction in demo mode
+    const queue = [url, ...state.bufferAccessQueue.filter((queuedUrl) => queuedUrl !== url)];
     const urlsToEvict: string[] = [];
-    while (!IS_DEMO_MODE && queue.length > MAX_CACHED_BUFFERS) {
-      const urlToEvict = queue.pop();
-      if (urlToEvict) {
-        // Don't evict the currently selected/playing track
-        if (urlToEvict !== state.selectedAudioUrl) {
-          urlsToEvict.push(urlToEvict);
-          console.log(`[LRU Cache] Evicting ${urlToEvict}`);
-        } else {
-          // If we tried to evict the playing track, keep it at the end
-          queue.push(urlToEvict);
-          break;
+
+    if (!IS_DEMO_MODE) {
+      while (queue.length > MAX_CACHED_BUFFERS) {
+        // Least-recently-used entry that is safe to drop. Never evict the
+        // selected/playing track, even if it is the oldest access.
+        let evictIndex = -1;
+        for (let i = queue.length - 1; i >= 0; i--) {
+          if (queue[i] !== state.selectedAudioUrl) {
+            evictIndex = i;
+            break;
+          }
+        }
+        if (evictIndex === -1) break;
+
+        const [evicted] = queue.splice(evictIndex, 1);
+        if (evicted) {
+          urlsToEvict.push(evicted);
+          console.log(`[LRU Cache] Evicting ${evicted}`);
         }
       }
     }
 
-    // Apply all changes in one atomic update
     set((currentState) => ({
       bufferAccessQueue: queue,
       audioSources: currentState.audioSources.map((as) =>
-        urlsToEvict.includes(as.source.url) ? { ...as, status: "idle", buffer: undefined } : as
+        urlsToEvict.includes(as.source.url) ? { source: as.source, status: "idle" } : as
       ),
     }));
   };
 
-  // Load audio buffer for a source
-  const loadAudioSource = async (url: string) => {
-    try {
+  const evictRemovedSourcesFromQueue = (sources: AudioSourceType[]): string[] => {
+    const state = get();
+    const sourceUrls = new Set(sources.map((source) => source.url));
+    return state.bufferAccessQueue.filter(
+      (url) =>
+        sourceUrls.has(url) &&
+        state.audioSources.some((audioSource) => audioSource.source.url === url && audioSource.status === "loaded")
+    );
+  };
+
+  // Load audio buffer for a source. Resolves true when the buffer is usable.
+  const loadAudioSource = (url: string): Promise<boolean> => {
+    const inFlight = audioLoadPromises.get(url);
+    if (inFlight) return inFlight;
+
+    const promise = (async () => {
       const state = get();
       const existing = state.audioSources.find((as) => as.source.url === url);
 
-      // Skip if already loaded or in-flight
-      if (existing && existing.status === "loading") {
-        return;
+      if (!existing) {
+        console.warn(`[Audio] Ignoring load for a source that is no longer in the queue: ${url}`);
+        return false;
       }
-      if (existing && existing.status === "loaded") {
+
+      if (existing.status === "loaded") {
         // Update LRU queue when accessing an already loaded buffer
         addURLToLRU(url);
-
-        const { socket } = getSocket(state);
-        sendWSRequest({
-          ws: socket,
-          request: {
-            type: ClientActionEnum.enum.AUDIO_SOURCE_LOADED,
-            source: { url },
-          },
-        });
-        return;
+        notifyAudioLoaded(url);
+        return true;
       }
 
-      // Mark as loading
+      // Mark as loading (also clears a previous error so retries are visible)
       set((currentState) => ({
         audioSources: currentState.audioSources.map((as) =>
-          as.source.url === url ? { ...as, status: "loading" } : as
+          as.source.url === url
+            ? { ...as, status: "loading", loadedBytes: 0, totalBytes: undefined, error: undefined }
+            : as
         ),
       }));
 
       let lastReportedBytes = 0;
       const PROGRESS_THRESHOLD = 100 * 1024; // Report every ~100KB
-      const { audioBuffer } = await downloadBufferFromURL({
-        url,
-        onProgress: (loaded, total) => {
-          if (loaded - lastReportedBytes < PROGRESS_THRESHOLD && loaded < total) return;
-          lastReportedBytes = loaded;
-          set((currentState) => ({
-            audioSources: currentState.audioSources.map((as) =>
-              as.source.url === url && as.status === "loading" ? { ...as, loadedBytes: loaded, totalBytes: total } : as
-            ),
-          }));
-        },
-      });
+      try {
+        const { audioBuffer } = await downloadBufferFromURL({
+          url,
+          onProgress: (loaded, total) => {
+            if (loaded - lastReportedBytes < PROGRESS_THRESHOLD && (total <= 0 || loaded < total)) return;
+            lastReportedBytes = loaded;
+            set((currentState) => ({
+              audioSources: currentState.audioSources.map((as) =>
+                as.source.url === url && as.status === "loading"
+                  ? { ...as, loadedBytes: loaded, totalBytes: total > 0 ? total : undefined }
+                  : as
+              ),
+            }));
+          },
+        });
 
-      // Update the source with loaded buffer
-      set((currentState) => ({
-        audioSources: currentState.audioSources.map((as) =>
-          as.source.url === url ? { ...as, status: "loaded", buffer: audioBuffer } : as
-        ),
-      }));
+        // The source may have been deleted while the download was in flight.
+        if (!get().audioSources.some((as) => as.source.url === url)) {
+          console.warn(`[Audio] Dropping completed download for removed source: ${url}`);
+          return false;
+        }
 
-      // Update LRU queue after successfully loading a new buffer
-      addURLToLRU(url);
+        set((currentState) => ({
+          audioSources: currentState.audioSources.map((as) =>
+            as.source.url === url ? { ...as, status: "loaded", buffer: audioBuffer } : as
+          ),
+        }));
 
-      // Send message to server that the source is loaded (re-read socket in case of reconnect during fetch)
-      const { socket } = getSocket(get());
-      sendWSRequest({
-        ws: socket,
-        request: {
-          type: ClientActionEnum.enum.AUDIO_SOURCE_LOADED,
-          source: { url },
-        },
-      });
-    } catch (error) {
-      console.error(`Failed to load audio source ${url}:`, error);
-      // Update the source with error status
-      set((currentState) => ({
-        audioSources: currentState.audioSources.map((as) =>
-          as.source.url === url ? { ...as, status: "error", error: String(error) } : as
-        ),
-      }));
+        addURLToLRU(url);
+        notifyAudioLoaded(url);
+        return true;
+      } catch (error) {
+        console.error(`Failed to load audio source ${url}:`, error);
+        const message = error instanceof Error ? error.message : String(error);
+
+        set((currentState) => ({
+          audioSources: currentState.audioSources.map((as) =>
+            as.source.url === url ? { ...as, status: "error", error: message } : as
+          ),
+        }));
+
+        notifyAudioLoadFailed(url, message);
+        return false;
+      }
+    })();
+
+    audioLoadPromises.set(url, promise);
+    void promise.finally(() => {
+      if (audioLoadPromises.get(url) === promise) {
+        audioLoadPromises.delete(url);
+      }
+    });
+
+    return promise;
+  };
+
+  /**
+   * Buffer the selected track plus the next few queue entries ahead of time.
+   * This is the difference between "press play and wait for a full download"
+   * and "press play and hear audio immediately".
+   */
+  const prefetchSources = ({ aroundUrl, count = MAX_CACHED_BUFFERS }: { aroundUrl?: string; count?: number }) => {
+    const state = get();
+    if (state.audioSources.length === 0) return;
+
+    const anchorUrl = aroundUrl ?? state.selectedAudioUrl;
+    const anchorIndex = anchorUrl ? state.audioSources.findIndex((as) => as.source.url === anchorUrl) : 0;
+    const startIndex = anchorIndex >= 0 ? anchorIndex : 0;
+
+    const orderedUrls: string[] = [];
+    for (let offset = 0; offset < state.audioSources.length; offset++) {
+      const source = state.audioSources[(startIndex + offset) % state.audioSources.length];
+      if (source) orderedUrls.push(source.source.url);
     }
+
+    void (async () => {
+      let considered = 0;
+      for (const url of orderedUrls) {
+        if (considered >= count) break;
+
+        const source = get().audioSources.find((as) => as.source.url === url);
+        if (!source) continue;
+
+        // Already buffered or in flight counts toward the window.
+        if (source.status === "loaded" || source.status === "loading") {
+          considered++;
+          continue;
+        }
+        // Don't retry failures in the background; the user can click to retry.
+        if (source.status === "error") continue;
+
+        considered++;
+        await loadAudioSource(url);
+      }
+    })();
   };
 
   // Eagerly load idle audio sources (skips loading/loaded/error).
@@ -524,7 +671,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       if (!IS_DEMO_MODE && loaded >= MAX_CACHED_BUFFERS) break;
       if (as.source.url === skip) continue;
       if (as.status === "idle") {
-        loadAudioSource(as.source.url);
+        void loadAudioSource(as.source.url);
         loaded++;
       }
     }
@@ -731,6 +878,13 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         duration: newDuration,
       });
 
+      // Start the download immediately instead of waiting for the server's
+      // LOAD_AUDIO_SOURCE round trip, and warm up the next tracks for skips.
+      if (!IS_DEMO_MODE) {
+        void loadAudioSource(url);
+        prefetchSources({ aroundUrl: url });
+      }
+
       // Return the previous playing state for the skip functions to use
       return wasPlaying;
     },
@@ -749,6 +903,60 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         // Non-interactive state, can't play audio
         return;
       }
+
+      // Resolve the track first: a scheduled play must never start the clock
+      // for a buffer that does not exist yet.
+      const audioIndex = state.findAudioIndexByUrl(data.audioSource);
+      if (audioIndex === null) {
+        if (state.isPlaying) {
+          state.pauseAudio({ when: 0 });
+        }
+        console.warn(`Cannot play audio: Track not found in audioSources: ${data.audioSource}`);
+        return;
+      }
+
+      const audioSourceState = state.audioSources[audioIndex];
+
+      // Select the target before waiting for its buffer, so a server-driven
+      // play (autoplay/sync) updates the UI even while the download runs.
+      if (data.audioSource !== state.selectedAudioUrl) {
+        set({ selectedAudioUrl: data.audioSource });
+      }
+
+      if (audioSourceState?.status !== "loaded") {
+        if (state.isPlaying) {
+          state.pauseAudio({ when: 0 });
+        }
+
+        console.warn(`[Schedule] Waiting for track to load: ${data.audioSource}`);
+        toast.info(`Buffering "${extractFileNameFromUrl(data.audioSource)}"...`, { id: "schedulePlay" });
+
+        // Wait for this one load (retrying a previous failure) and request a
+        // fresh schedule afterwards. The old code polled SYNC every second,
+        // which kept re-scheduling playback while the download was still running.
+        void loadAudioSource(data.audioSource).then((loaded) => {
+          if (!loaded) {
+            toast.error(`Couldn't load "${extractFileNameFromUrl(data.audioSource)}"`, { id: "schedulePlay" });
+            return;
+          }
+
+          const currentState = get();
+          // The user moved on while this was downloading.
+          if (currentState.selectedAudioUrl !== data.audioSource) return;
+
+          const socket = currentState.socket;
+          if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+          sendWSRequest({
+            ws: socket,
+            request: { type: ClientActionEnum.enum.SYNC },
+          });
+        });
+
+        return;
+      }
+
+      toast.dismiss("schedulePlay");
 
       // Simulate scheduling delay for testing:
       // await new Promise((resolve) => setTimeout(resolve, 500));
@@ -780,12 +988,6 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
           );
 
           // Update state and schedule on audio thread (sample-accurate)
-          if (data.audioSource !== state.selectedAudioUrl) {
-            set({ selectedAudioUrl: data.audioSource });
-          }
-          const audioIndex = state.findAudioIndexByUrl(data.audioSource);
-          if (audioIndex === null) return;
-
           const absoluteStartTime = audioContextManager.getContext().currentTime + retryDelayMs / 1000;
           state.playAudio({
             offset: trackPositionAtRetry,
@@ -802,25 +1004,6 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       }
 
       console.log(`Playing track ${data.audioSource} at ${data.trackTimeSeconds} seconds in ${waitTimeSeconds}`);
-
-      // Update the selected audio ID
-      if (data.audioSource !== state.selectedAudioUrl) {
-        set({ selectedAudioUrl: data.audioSource });
-      }
-
-      // Find the index of the audio to play
-      const audioIndex = state.findAudioIndexByUrl(data.audioSource);
-
-      // Check if track doesn't exist at all
-      if (audioIndex === null) {
-        if (state.isPlaying) {
-          state.pauseAudio({ when: 0 });
-        }
-        console.warn(`Cannot play audio: Track not found in audioSources: ${data.audioSource}`);
-        return;
-      }
-
-      const audioSourceState = state.audioSources[audioIndex];
 
       // Demo mode: kick-style synchronous play — no async, no indirection
       if (IS_DEMO_MODE && audioSourceState?.status === "loaded" && audioSourceState.buffer) {
@@ -858,25 +1041,9 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         return;
       }
 
-      // Check if track exists but is still loading
-      if (audioSourceState?.status === "loading") {
-        if (state.isPlaying) {
-          state.pauseAudio({ when: 0 });
-        }
-
-        console.warn(`Cannot play audio: Track still loading: ${data.audioSource}`);
-        toast.warning(`"${extractFileNameFromUrl(data.audioSource)}" not loaded yet...`, { id: "schedulePlay" });
-
-        const { socket } = getSocket(state);
-        setTimeout(() => {
-          sendWSRequest({
-            ws: socket,
-            request: { type: ClientActionEnum.enum.SYNC },
-          });
-        }, 1000);
-
-        return;
-      }
+      // Track exists but is not playable yet. This is unreachable after the
+      // readiness check above, except in demo mode before eager loading finishes.
+      toast.dismiss("schedulePlay");
 
       // Capture absolute start time NOW (synchronous) so async delays in playAudio don't shift it
       const absoluteStartTime = audioContextManager.getContext().currentTime + waitTimeSeconds;
@@ -917,12 +1084,24 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         return;
       }
 
+      const selectedSource = state.audioSources.find((as) => as.source.url === audioId);
+      const sourceLoaded = selectedSource?.status === "loaded";
+
+      // This call happens inside the user's click gesture: resume a suspended
+      // AudioContext now, and start the download locally before the server's
+      // LOAD_AUDIO_SOURCE round trip arrives.
+      void audioContextManager.resume().catch(() => undefined);
+      if (selectedSource && selectedSource.status !== "loaded") {
+        void loadAudioSource(audioId);
+      }
+
       sendWSRequest({
         ws: socket,
         request: {
           type: ClientActionEnum.enum.PLAY,
           trackTimeSeconds: trackTimeSeconds ?? state.getCurrentTrackPosition(),
           audioSource: audioId,
+          sourceLoaded,
         },
       });
     },
@@ -1091,8 +1270,11 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       // Allow nudge to be restored from server on next CLIENT_CHANGE
       set({ didRestoreNudge: false });
 
-      // Delegate NTP reset to the single source of truth
-      get().resetNTPConfig();
+      // Keep the established clock offset and measurements across a reconnect.
+      // They stay valid for short drops, and wiping them put the whole app into
+      // the full-screen "calibrating" overlay on every network hiccup. Only the
+      // half-finished probe pair belongs to the old socket.
+      resetPendingProbe();
     },
 
     getCurrentTrackPosition: () => {
@@ -1111,12 +1293,22 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
     playAudio: async (data: { offset: number; when: number; absoluteStartTime?: number; audioIndex?: number }) => {
       const state = get();
-      const { sourceNode, audioContext } = getAudioPlayer(state);
+      const { sourceNode } = getAudioPlayer(state);
+      const audioContext = audioContextManager.getContext();
 
-      // Before any audio playback, ensure the context is running
+      // Browsers suspend the AudioContext when the tab is backgrounded or after
+      // an iOS interruption. Try to resume before giving up; the click that
+      // scheduled this play is usually recent enough to count as a gesture.
+      if (audioContext.state !== "running") {
+        try {
+          await audioContextManager.resume();
+        } catch {
+          // Fall through to the state check below.
+        }
+      }
       if (audioContext.state !== "running") {
         console.log("AudioContext still suspended, aborting play");
-        toast.error("Audio context is suspended. Please try again.");
+        toast.error("Audio context is suspended. Please tap play again.");
         return;
       }
 
@@ -1440,28 +1632,18 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
       const state = get();
 
-      // Clean up buffer access queue - remove URLs that are no longer in the playlist
-      // const newUrls = new Set(sources.map((s) => s.url));
-      // const updatedQueue = state.bufferAccessQueue.filter((url) =>
-      //   newUrls.has(url)
-      // );
+      // Detect tracks newly added to an existing queue so they can start
+      // downloading immediately, before anyone presses play.
+      const previousUrls = new Set(state.audioSources.map((as) => as.source.url));
+      const addedUrls =
+        state.audioSources.length > 0
+          ? sources.map((source) => source.url).filter((url) => !previousUrls.has(url))
+          : [];
 
-      // Build completely new queue based on sources order
-      const newQueue: string[] = [];
-
-      // Add current/selected track first (highest priority)
-      if (currentAudioSource && sources.some((s) => s.url === currentAudioSource)) {
-        newQueue.push(currentAudioSource);
-      } else if (state.selectedAudioUrl && sources.some((s) => s.url === state.selectedAudioUrl)) {
-        newQueue.push(state.selectedAudioUrl);
-      }
-
-      // Add remaining tracks in playlist order
-      sources.forEach((source) => {
-        if (!newQueue.includes(source.url)) {
-          newQueue.push(source.url);
-        }
-      });
+      // Keep only the buffers that are still part of the playlist. The queue
+      // previously started with every source URL (not just loaded buffers),
+      // which made the LRU accounting wrong and let loaded buffers accumulate.
+      const newQueue = evictRemovedSourcesFromQueue(sources);
 
       // Create new audioSources array (preserving loaded buffers for tracks still in playlist)
       const existingByUrl = new Map(state.audioSources.map((as) => [as.source.url, as]));
@@ -1482,13 +1664,23 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       // If currentAudioSource is provided from server, update selectedAudioUrl and start loading it
       if (currentAudioSource) {
         set({ selectedAudioUrl: currentAudioSource });
-        loadAudioSource(currentAudioSource);
+        void loadAudioSource(currentAudioSource);
       }
 
-      // In demo mode, eagerly load remaining sources if sync is done.
-      // In prod, sources load on-demand when the user selects them.
-      if (IS_DEMO_MODE && get().isSynced) {
-        eagerLoadIdleSources({ skip: currentAudioSource });
+      // Demo mode preloads everything. In production, buffer the selected track
+      // and the next few queue entries so pressing play (or skipping) is instant.
+      if (IS_DEMO_MODE) {
+        if (get().isSynced) {
+          eagerLoadIdleSources({ skip: currentAudioSource });
+        }
+      } else {
+        prefetchSources({ aroundUrl: currentAudioSource ?? get().selectedAudioUrl });
+
+        // Warm the newest addition first — this is what makes a freshly added
+        // YouTube/uploaded track play without waiting for a full download.
+        for (const url of addedUrls.slice(-1)) {
+          void loadAudioSource(url);
+        }
       }
 
       // Check if the currently selected/playing track was removed
@@ -1530,6 +1722,10 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
       // Reset low-pass filter to bypassed
       audioContextManager.setLowPassFreq(LOW_PASS_CONSTANTS.MAX_FREQ);
+
+      // Abandon in-flight loads; their completion handlers drop results that
+      // are no longer in the queue.
+      audioLoadPromises.clear();
 
       // Reset state to initial values
       set({
@@ -1657,7 +1853,9 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     // Audio source methods
     handleLoadAudioSource: ({ audioSourceToPlay }: LoadAudioSourceType) => {
       set({ selectedAudioUrl: audioSourceToPlay.url });
-      loadAudioSource(audioSourceToPlay.url);
+      // Handles every state: coalesces in-flight loads, retries errored ones,
+      // and instantly reports an already-loaded buffer.
+      void loadAudioSource(audioSourceToPlay.url);
     },
   };
 });

@@ -47,16 +47,6 @@ export const QueueSortableItem = ({
   const handleItemClick = (sourceState: AudioSourceState) => {
     if (!canMutate) return;
 
-    // Don't allow interaction with loading or error tracks
-    if (sourceState.status === "loading") {
-      // Could show a toast here if desired
-      return;
-    }
-    if (sourceState.status === "error") {
-      // Could show error details in a toast
-      return;
-    }
-
     const source = sourceState.source;
     if (source.url === selectedAudioUrl) {
       if (isPlaying) {
@@ -65,6 +55,8 @@ export const QueueSortableItem = ({
         broadcastPlay();
       }
     } else {
+      // Selecting (or retrying) an idle/error track kicks off the download
+      // immediately; the server schedules playback once the buffer exists.
       changeAudioSource(source.url);
       broadcastPlay(0);
     }
@@ -128,7 +120,8 @@ export const QueueSortableItem = ({
           "flex items-center pl-2 pr-4 py-3 rounded-md group transition-colors select-none",
           isSelected ? "text-white hover:bg-neutral-700/20" : "text-neutral-300 hover:bg-neutral-700/20",
           !canMutate && "text-white/50",
-          (isLoading || isError) && "opacity-60 cursor-not-allowed",
+          isLoading && "opacity-60 cursor-default",
+          isError && "opacity-80",
           isDragging && "bg-neutral-700/20"
         )}
         onClick={() => handleItemClick(sourceState)}

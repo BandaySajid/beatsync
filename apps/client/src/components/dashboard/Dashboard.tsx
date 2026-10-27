@@ -18,8 +18,15 @@ export const Dashboard = ({ roomId }: DashboardProps) => {
   const isSynced = useGlobalStore((state) => state.isSynced);
   const isLoadingAudio = useGlobalStore((state) => state.isInitingSystem);
   const hasUserStartedSystem = useGlobalStore((state) => state.hasUserStartedSystem);
+  const reconnectionInfo = useGlobalStore((state) => state.reconnectionInfo);
 
   const isReady = isSynced && !isLoadingAudio;
+  // Transient disconnects keep isSynced (and therefore playback/UI) intact and
+  // reconnect in the background. Only surface the blocking screen once the
+  // retry budget is exhausted or the initial calibration never completed.
+  const hasReconnectionFailed =
+    reconnectionInfo.isReconnecting && reconnectionInfo.currentAttempt >= reconnectionInfo.maxAttempts;
+  const showSyncOverlay = !isLoadingAudio && hasUserStartedSystem && (!isSynced || hasReconnectionFailed);
 
   const containerVariants = {
     hidden: { opacity: 0 },
@@ -38,8 +45,8 @@ export const Dashboard = ({ roomId }: DashboardProps) => {
       {/* Top bar: Fixed height */}
       <TopBar roomId={roomId} />
 
-      {/* Show SyncProgress during reconnection (when user has already started but lost sync) */}
-      {!isSynced && hasUserStartedSystem && !isLoadingAudio && <SyncProgress />}
+      {/* Show SyncProgress during initial calibration or after reconnect attempts are exhausted */}
+      {showSyncOverlay && <SyncProgress />}
 
       {isReady && (
         <motion.div

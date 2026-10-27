@@ -5,9 +5,10 @@ import type { HandlerFunction } from "@/websocket/types";
 export const handleAudioSourceLoaded: HandlerFunction<ExtractWSRequestFrom["AUDIO_SOURCE_LOADED"]> = ({
   ws,
   server,
+  message,
 }) => {
   const { room } = requireRoom(ws);
 
   // Process that this client has loaded the audio source
-  room.processClientLoadedAudioSource(ws.data.clientId, server);
+  room.processClientLoadedAudioSource(ws.data.clientId, server, message.source.url);
 };

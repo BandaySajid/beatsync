@@ -80,4 +80,25 @@ describe("useNtpHeartbeat staleness detection", () => {
     result.current.stopHeartbeat();
     unmount();
   });
+
+  it("does NOT declare stale when another server message arrived after the probe", async () => {
+    // Audio downloads can delay a probe response. If any other message (ping,
+    // spatial config, room event) arrived after the probe was sent, the socket
+    // is demonstrably alive and must not be torn down.
+    const { result, unmount, sendProbePair, onConnectionStale } = setupHook();
+
+    result.current.startHeartbeat();
+    await nextFire();
+    expect(sendProbePair).toHaveBeenCalledTimes(1);
+
+    useGlobalStore.setState({ lastMessageReceivedTime: Date.now() });
+    setSystemTime(new Date(Date.now() + THROTTLE_GAP_MS));
+    await nextFire();
+
+    expect(onConnectionStale).not.toHaveBeenCalled();
+    expect(sendProbePair.mock.calls.length).toBeGreaterThanOrEqual(2);
+
+    result.current.stopHeartbeat();
+    unmount();
+  });
 });

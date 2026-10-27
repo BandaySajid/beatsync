@@ -5,7 +5,8 @@
 import type { WSBroadcastType } from "@beatsync/shared";
 import type { PlayActionType } from "@beatsync/shared/types/WSRequest";
 import type { ServerWebSocket } from "bun";
-import { afterEach, beforeEach, describe, expect, it, mock, vi } from "bun:test";
+import { afterEach, beforeEach, describe, expect, it, mock } from "bun:test";
+import sinon from "sinon";
 import { mockR2 } from "@/__tests__/mocks/r2";
 import { createMockServer, createMockWs } from "@/__tests__/mocks/websocket";
 import { RoomManager } from "@/managers/RoomManager";
@@ -32,11 +33,16 @@ void mock.module("@/utils/responses", () => ({
 const ROOM_ID = "test-room";
 const AUDIO_URL = "https://example.com/song.mp3";
 
-function createPlayAction(opts: { audioSource?: string; trackTimeSeconds?: number } = {}): PlayActionType {
+function createPlayAction(
+  opts: { audioSource?: string; trackTimeSeconds?: number; sourceLoaded?: boolean } = {}
+): PlayActionType {
   return {
     type: "PLAY",
     audioSource: opts.audioSource ?? AUDIO_URL,
     trackTimeSeconds: opts.trackTimeSeconds ?? 0,
+    // Most tests exercise the "cached buffer" path so the initiator is
+    // pre-resolved; dedicated tests opt out to cover the download path.
+    sourceLoaded: opts.sourceLoaded ?? true,
   };
 }
 
@@ -110,13 +116,13 @@ describe("Audio Loading Coordination", () => {
       expect(broadcastMessages).toHaveLength(0);
     });
 
-    it("should mark the initiator client as already loaded", () => {
+    it("should pre-mark the initiator only when the client already has the buffer", () => {
       addClientsToRoom(room, 4);
 
-      room.initiateAudioSourceLoad(createPlayAction(), "client-1", server);
+      room.initiateAudioSourceLoad(createPlayAction({ sourceLoaded: true }), "client-1", server);
       broadcastMessages = [];
 
-      // Initiator is pre-loaded, so only the other 3 need to report
+      // Initiator claimed a cached buffer, so only the other 3 need to report
       room.processClientLoadedAudioSource("client-2", server);
       room.processClientLoadedAudioSource("client-3", server);
       expect(getScheduledActionBroadcasts()).toHaveLength(0);
@@ -125,6 +131,20 @@ describe("Audio Loading Coordination", () => {
 
       const scheduled = getScheduledActionBroadcasts();
       expect(scheduled).toHaveLength(1);
+    });
+
+    it("should wait for an initiator that has not loaded the source yet", () => {
+      addClientsToRoom(room, 2);
+
+      // No sourceLoaded flag: the initiator still has to download it.
+      room.initiateAudioSourceLoad(createPlayAction({ sourceLoaded: false }), "client-1", server);
+      broadcastMessages = [];
+
+      room.processClientLoadedAudioSource("client-2", server);
+      expect(getScheduledActionBroadcasts()).toHaveLength(0);
+
+      room.processClientLoadedAudioSource("client-1", server);
+      expect(getScheduledActionBroadcasts()).toHaveLength(1);
     });
 
     it("should clear previous pending state when called twice", () => {
@@ -191,6 +211,48 @@ describe("Audio Loading Coordination", () => {
       const scheduled = getScheduledActionBroadcasts();
       expect(scheduled).toHaveLength(1);
     });
+
+    it("should ignore load reports for a different source (prefetch completing late)", () => {
+      addClientsToRoom(room, 2);
+
+      room.initiateAudioSourceLoad(createPlayAction({ sourceLoaded: false }), "client-1", server);
+      broadcastMessages = [];
+
+      // client-2 just finished prefetching some other track, not the pending one
+      room.processClientLoadedAudioSource("client-2", server, "https://example.com/other.mp3");
+      expect(getScheduledActionBroadcasts()).toHaveLength(0);
+
+      room.processClientLoadedAudioSource("client-1", server, AUDIO_URL);
+      room.processClientLoadedAudioSource("client-2", server, AUDIO_URL);
+      expect(getScheduledActionBroadcasts()).toHaveLength(1);
+    });
+
+    it("should start playback when a failed client would otherwise block the room", () => {
+      addClientsToRoom(room, 3);
+
+      room.initiateAudioSourceLoad(createPlayAction({ sourceLoaded: false }), "client-1", server);
+      broadcastMessages = [];
+
+      room.processClientLoadedAudioSource("client-1", server, AUDIO_URL);
+      room.processClientLoadedAudioSource("client-2", server, AUDIO_URL);
+      expect(getScheduledActionBroadcasts()).toHaveLength(0);
+
+      // client-3 cannot decode the track; don't hold the room for the full timeout
+      room.processClientAudioLoadFailed("client-3", AUDIO_URL);
+      expect(getScheduledActionBroadcasts()).toHaveLength(1);
+    });
+
+    it("should abort play when every client fails to load the source", () => {
+      addClientsToRoom(room, 2);
+
+      room.initiateAudioSourceLoad(createPlayAction({ sourceLoaded: false }), "client-1", server);
+      broadcastMessages = [];
+
+      room.processClientAudioLoadFailed("client-1", AUDIO_URL);
+      room.processClientAudioLoadFailed("client-2", AUDIO_URL);
+
+      expect(getScheduledActionBroadcasts()).toHaveLength(0);
+    });
   });
 
   describe("executeScheduledPlay (via all clients loaded)", () => {
@@ -246,12 +308,16 @@ describe("Audio Loading Coordination", () => {
   });
 
   describe("timeout behavior", () => {
+    let clock: sinon.SinonFakeTimers;
+
     beforeEach(() => {
-      vi.useFakeTimers();
+      // Use sinon (not Bun's vi) so fake timers compose with the liveness
+      // suite, which also drives sinon's clock in the same process.
+      clock = sinon.useFakeTimers();
     });
 
     afterEach(() => {
-      vi.useRealTimers();
+      clock.restore();
     });
 
     it("should execute play after timeout even if not all clients loaded", () => {
@@ -265,8 +331,8 @@ describe("Audio Loading Coordination", () => {
       room.processClientLoadedAudioSource("client-3", server);
       expect(getScheduledActionBroadcasts()).toHaveLength(0);
 
-      // Advance past the 3s timeout
-      vi.advanceTimersByTime(3000);
+      // Advance past the timeout
+      clock.tick(RoomManager.AUDIO_LOAD_TIMEOUT_MS);
 
       const scheduled = getScheduledActionBroadcasts();
       expect(scheduled).toHaveLength(1);
@@ -285,7 +351,7 @@ describe("Audio Loading Coordination", () => {
       expect(getScheduledActionBroadcasts()).toHaveLength(1);
 
       // Advance past the timeout window - should not fire again
-      vi.advanceTimersByTime(3000);
+      clock.tick(RoomManager.AUDIO_LOAD_TIMEOUT_MS);
 
       // Should still only have 1 scheduled action (timeout was cleared)
       expect(getScheduledActionBroadcasts()).toHaveLength(1);

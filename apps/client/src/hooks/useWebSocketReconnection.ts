@@ -53,6 +53,8 @@ export const useWebSocketReconnection = ({
 
   // Schedule a reconnection attempt with exponential backoff
   const scheduleReconnection = () => {
+    // Replace any pending backoff plan so two retries can never race.
+    clearReconnectionTimeout();
     clearConnectionTimeout();
     reconnectAttempts.current++;
     useGlobalStore.getState().setReconnectionInfo({
@@ -77,7 +79,15 @@ export const useWebSocketReconnection = ({
 
     // Schedule reconnection with delay
     reconnectTimeout.current = setTimeout(() => {
-      createConnection();
+      reconnectTimeout.current = null;
+
+      try {
+        createConnection();
+      } catch (error) {
+        console.error("Reconnection attempt failed to start:", error);
+        scheduleReconnection();
+        return;
+      }
 
       // Safari/iOS can silently drop WebSocket connections without firing
       // onclose when the server is unreachable. Set a timeout to detect this

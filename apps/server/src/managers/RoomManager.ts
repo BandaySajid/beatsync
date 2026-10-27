@@ -84,6 +84,7 @@ const INITIAL_PLAYBACK_STATE: RoomPlaybackState = {
 
 interface PendingPlayState {
   clientsLoaded: Set<string>;
+  clientsFailed: Set<string>;
   timeout: NodeJS.Timeout;
   playAction: PlayActionType;
   initiatorClientId: string;
@@ -95,7 +96,11 @@ interface PendingPlayState {
  * Each room has its own instance of RoomManager.
  */
 export class RoomManager {
-  private static readonly AUDIO_LOAD_TIMEOUT_MS = 3000; // 3 seconds max wait for audio loading
+  // 15s is a safety net, not the normal path: clients report AUDIO_SOURCE_LOADED
+  // or AUDIO_SOURCE_LOAD_FAILED, so playback starts as soon as the room resolves.
+  // The old 3s cap fired while YouTube tracks were still downloading, which made
+  // the client abort the scheduled play and re-sync in a loop.
+  static readonly AUDIO_LOAD_TIMEOUT_MS = 15000;
   // Liveness policy. NTP recency can't be used for liveness: backgrounded tabs have
   // throttled timers (no NTP) but still run message handlers, so they can answer PINGs.
   static readonly LIVENESS_PING_AFTER_MS = 15_000; // silent this long -> send PING
@@ -183,9 +188,12 @@ export class RoomManager {
       this.executeScheduledPlay(server);
     }, RoomManager.AUDIO_LOAD_TIMEOUT_MS);
 
-    // Store pending play state
+    // Store pending play state. The initiator only counts as loaded when it
+    // explicitly told us it already has the buffer (sourceLoaded). Assuming it
+    // always did let playback start before the initiator finished downloading.
     this.pendingPlay = {
-      clientsLoaded: new Set([initiatorClientId]),
+      clientsLoaded: new Set(playAction.sourceLoaded ? [initiatorClientId] : []),
+      clientsFailed: new Set(),
       timeout,
       playAction,
       initiatorClientId,
@@ -206,6 +214,13 @@ export class RoomManager {
     });
 
     console.log(`Initiated audio loading for ${audioSource.url} in room ${this.roomId}`);
+
+    // Solo rooms (or rooms where every client already has the buffer) don't
+    // need to wait for a report round trip.
+    if (this.allClientsLoadedPendingSource()) {
+      console.log(`Room ${this.roomId}: All clients already have the source. Starting playback.`);
+      this.executeScheduledPlay(server);
+    }
   }
 
   allClientsLoadedPendingSource(): boolean {
@@ -220,13 +235,16 @@ export class RoomManager {
       return false;
     }
 
-    return this.pendingPlay.clientsLoaded.size === clientCount;
+    const resolved = new Set([...this.pendingPlay.clientsLoaded, ...this.pendingPlay.clientsFailed]);
+    return resolved.size >= clientCount;
   }
 
   /**
-   * Process when a client reports they've loaded the audio source
+   * Process when a client reports they've loaded the audio source.
+   * Reports for a different source (e.g. a prefetch finishing after the room
+   * moved on) must not count toward the pending play.
    */
-  processClientLoadedAudioSource(clientId: string, server: BunServer): void {
+  processClientLoadedAudioSource(clientId: string, server: BunServer, sourceUrl?: string): void {
     if (IS_DEMO_MODE) {
       this.serverRef = server;
       this.demoAudioReadyClients.add(clientId);
@@ -235,14 +253,17 @@ export class RoomManager {
     }
 
     if (!this.pendingPlay) {
-      console.warn(
-        `Room ${this.roomId}: Client ${clientId} reported audio source loaded, but no pending play state found`
-      );
+      // Prefetch loads report in at any time; only warn when a play is pending.
       return;
     }
 
-    // Add client to loaded set
+    if (sourceUrl && sourceUrl !== this.pendingPlay.playAction.audioSource) {
+      return;
+    }
+
+    // Add client to loaded set (and clear any previous failure for this source)
     this.pendingPlay.clientsLoaded.add(clientId);
+    this.pendingPlay.clientsFailed.delete(clientId);
 
     const loadedCount = this.pendingPlay.clientsLoaded.size;
     const totalCount = this.getClients().length;
@@ -252,6 +273,35 @@ export class RoomManager {
     if (this.allClientsLoadedPendingSource()) {
       console.log(`Room ${this.roomId}: All clients loaded. Starting playback.`);
       this.executeScheduledPlay(server);
+    }
+  }
+
+  /**
+   * Process when a client reports it could not load the pending source after
+   * exhausting its retries. Treat it as resolved so one broken client cannot
+   * hold the whole room hostage until the timeout.
+   */
+  processClientAudioLoadFailed(clientId: string, sourceUrl?: string): void {
+    if (IS_DEMO_MODE || !this.pendingPlay) return;
+    if (sourceUrl && sourceUrl !== this.pendingPlay.playAction.audioSource) return;
+
+    this.pendingPlay.clientsLoaded.delete(clientId);
+    this.pendingPlay.clientsFailed.add(clientId);
+
+    console.warn(`Room ${this.roomId}: Client ${clientId} failed to load ${this.pendingPlay.playAction.audioSource}`);
+
+    if (this.pendingPlay.clientsLoaded.size === 0) {
+      // Nobody in the room can play this source — clear the pending play so the
+      // next attempt starts clean instead of scheduling silence.
+      if (this.pendingPlay.clientsFailed.size >= this.getClients().length) {
+        console.warn(`Room ${this.roomId}: Every client failed to load the source. Aborting play.`);
+        this.clearAudioLoadingState();
+      }
+      return;
+    }
+
+    if (this.allClientsLoadedPendingSource()) {
+      this.executeScheduledPlay(this.pendingPlay.server);
     }
   }
 
@@ -412,8 +462,9 @@ export class RoomManager {
 
     // Check if we were waiting for this client to load audio
     if (this.pendingPlay) {
-      // Remove client from loaded set if they were there
+      // Remove client from loaded/failed sets if they were there
       this.pendingPlay.clientsLoaded.delete(clientId);
+      this.pendingPlay.clientsFailed.delete(clientId);
 
       // Recheck if all remaining clients have loaded
       if (this.allClientsLoadedPendingSource()) {
@@ -920,6 +971,11 @@ export class RoomManager {
     // Determine if we are currently playing or paused
     if (this.playbackState.type === "paused") {
       return; // Nothing to do - client will play on next scheduled action
+    }
+
+    // The track may have been removed between the play and the sync request.
+    if (!this.audioSources.some((source) => source.url === this.playbackState.audioSource)) {
+      return;
     }
 
     const serverTimeWhenPlaybackStarted = this.playbackState.serverTimeToExecute;

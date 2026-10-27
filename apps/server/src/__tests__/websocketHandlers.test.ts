@@ -75,7 +75,7 @@ describe("WebSocket Handlers (Simplified Tests)", () => {
       ]);
     });
 
-    it("should not send audio sources for empty rooms", () => {
+    it("should send an empty audio source list for empty rooms", () => {
       // Create an empty room
       const roomId = "new-room";
       globalManager.getOrCreateRoom(roomId);
@@ -86,13 +86,17 @@ describe("WebSocket Handlers (Simplified Tests)", () => {
 
       handleOpen(ws, mockServer);
 
-      // Verify no SET_AUDIO_SOURCES was sent via ws.send
+      // An empty list clears any stale queue the client may still hold
       const sentMessages = getWsSentMessages(ws);
       const audioSourcesMessage = sentMessages.find(
         (msg) => msg.type === "ROOM_EVENT" && msg.event?.type === "SET_AUDIO_SOURCES"
       );
 
-      expect(audioSourcesMessage).toBeUndefined();
+      expect(audioSourcesMessage).toBeTruthy();
+      const msg = audioSourcesMessage!;
+      if (msg.type !== "ROOM_EVENT" || msg.event.type !== "SET_AUDIO_SOURCES")
+        throw new Error("Expected SET_AUDIO_SOURCES");
+      expect(msg.event.sources).toEqual([]);
     });
 
     it("should handle multiple clients joining the same room", () => {

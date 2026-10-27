@@ -51,22 +51,26 @@ export const handleOpen = (ws: ServerWebSocket<WSData>, server: BunServer) => {
   const { audioSources, globalVolume, lowPassFreq } = room.getState();
   const now = epochNow();
 
-  // Send audio sources to the newly joined client
-  if (audioSources.length > 0) {
-    console.log(`Sending ${audioSources.length} audio source(s) to newly joined client ${ws.data.username}`);
+  // Always send the current queue, including an empty one. A reconnect can land
+  // in a room that was cleaned up or restarted; without the empty update the
+  // client would keep showing and playing its stale local queue.
+  console.log(
+    audioSources.length > 0
+      ? `Sending ${audioSources.length} audio source(s) to newly joined client ${ws.data.username}`
+      : `Sending empty audio source list to newly joined client ${ws.data.username}`
+  );
 
-    sendToClient({
-      ws,
-      message: {
-        type: "ROOM_EVENT",
-        event: {
-          type: "SET_AUDIO_SOURCES",
-          sources: audioSources,
-          currentAudioSource: room.getPlaybackState().audioSource || undefined,
-        },
+  sendToClient({
+    ws,
+    message: {
+      type: "ROOM_EVENT",
+      event: {
+        type: "SET_AUDIO_SOURCES",
+        sources: audioSources,
+        currentAudioSource: room.getPlaybackState().audioSource || undefined,
       },
-    });
-  }
+    },
+  });
 
   sendToClient({
     ws,

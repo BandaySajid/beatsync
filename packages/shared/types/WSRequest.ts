@@ -32,6 +32,7 @@ export const ClientActionEnum = z.enum([
   "SET_GLOBAL_VOLUME", // Set global volume for all clients
   "SEND_CHAT_MESSAGE", // Send a chat message,
   "AUDIO_SOURCE_LOADED", // Audio source loaded in response to a LOAD_AUDIO_SOURCE request
+  "AUDIO_SOURCE_LOAD_FAILED", // Audio source failed to load after retries
   "REORDER_AUDIO_SOURCES", // Reorder audio sources in the room queue
   "SET_METRONOME", // Toggle metronome on/off for all clients
   "SET_LOW_PASS_FREQ", // Set low-pass filter cutoff frequency
@@ -54,6 +55,9 @@ export const PlayActionSchema = z.object({
   type: z.literal(ClientActionEnum.enum.PLAY),
   trackTimeSeconds: z.number(),
   audioSource: z.string(),
+  // Set by the initiator when it already has the decoded buffer. Lets the server
+  // skip waiting on a client that is guaranteed to answer instantly.
+  sourceLoaded: z.boolean().optional(),
 });
 
 export const PauseActionSchema = z.object({
@@ -148,6 +152,12 @@ export const AudioSourceLoadedSchema = z.object({
   source: AudioSourceSchema,
 });
 
+export const AudioSourceLoadFailedSchema = z.object({
+  type: z.literal(ClientActionEnum.enum.AUDIO_SOURCE_LOAD_FAILED),
+  source: AudioSourceSchema,
+  error: z.string().optional(),
+});
+
 export const ReorderAudioSourcesSchema = z.object({
   type: z.literal(ClientActionEnum.enum.REORDER_AUDIO_SOURCES),
   reorderedAudioSources: z.array(AudioSourceSchema).min(1),
@@ -193,6 +203,7 @@ export const WSRequestSchema = z.discriminatedUnion("type", [
   SetGlobalVolumeSchema,
   SendChatMessageSchema,
   AudioSourceLoadedSchema,
+  AudioSourceLoadFailedSchema,
   ReorderAudioSourcesSchema,
   SetMetronomeSchema,
   SetLowPassFreqSchema,
