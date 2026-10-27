@@ -407,22 +407,27 @@ export class YoutubeManager {
   }
 
   /**
-   * Resolve a direct audio URL through yt-dlp.
+   * Resolve a direct audio-only (129 kbps m4a) URL through yt-dlp.
    *
    * Some videos only yield range-limited URLs from youtubei's IOS client
-   * (first ~1 MiB then 403). yt-dlp's clients usually return a fully rangeable
-   * URL, which our parallel-range proxy can stream fast. The two audio-only
-   * clients are raced (both are occasionally rate-limited), then the more
-   * reliable muxed Android stream is used as a last resort.
+   * (first ~1 MiB then 403). yt-dlp's music clients usually return a fully
+   * rangeable URL, which our parallel-range proxy can stream fast. The two
+   * audio-only clients are raced because both are occasionally rate-limited.
    */
-  private async resolveViaYtDlp(videoId: string): Promise<YtDlpAudioInfo | null> {
+  private async resolveAudioOnlyViaYtDlp(videoId: string): Promise<YtDlpAudioInfo | null> {
     const audioOnlyFormat = "bestaudio[ext=m4a][abr<=160]/bestaudio[ext=m4a]";
-    const audioOnly = await this.firstSuccessful([
+    return this.firstSuccessful([
       this.extractViaYtDlp(videoId, "ios_music", audioOnlyFormat),
       this.extractViaYtDlp(videoId, "android_testsuite", audioOnlyFormat),
     ]);
-    if (audioOnly) return audioOnly;
+  }
 
+  /**
+   * The plain Android client is the most reliable source, but it only exposes
+   * a muxed 360p stream. Prefer its (lower-quality) URL over the slow pipe when
+   * the audio-only URLs are range-limited.
+   */
+  private async resolveMuxedViaYtDlp(videoId: string): Promise<YtDlpAudioInfo | null> {
     return this.extractViaYtDlp(videoId, "android", "bestaudio/best");
   }
 
@@ -518,21 +523,29 @@ export class YoutubeManager {
     let usedYtDlpFallback = false;
 
     if (await this.detectRangeLimit(streamUrl, contentLength)) {
-      const ytDlpInfo = await this.resolveViaYtDlp(videoId);
       const ytDlpAvailable = Boolean(this.ytDlpPath());
+      let fallback = await this.resolveAudioOnlyViaYtDlp(videoId);
+      let fallbackKind: "audio-only" | "muxed" = "audio-only";
 
-      if (ytDlpInfo) {
-        const fallbackIsRangeLimited = await this.detectRangeLimit(ytDlpInfo.url, ytDlpInfo.contentLength);
-        if (!fallbackIsRangeLimited) {
-          console.warn(`[YouTube] IOS URL for ${videoId} was range-limited; using yt-dlp direct URL`);
-          usedYtDlpFallback = true;
-          finalUrl = ytDlpInfo.url;
-          finalMimeType = ytDlpInfo.mimeType;
-          finalContentLength = ytDlpInfo.contentLength;
-          if (ytDlpInfo.title) finalTitle = ytDlpInfo.title;
-        } else if (ytDlpAvailable) {
-          mode = "pipe";
+      // Audio-only URLs can also be range-limited on some networks. In that
+      // case the reliability client's muxed URL is still a much faster option
+      // than piping a single throttled connection.
+      if (!fallback || (await this.detectRangeLimit(fallback.url, fallback.contentLength))) {
+        fallback = await this.resolveMuxedViaYtDlp(videoId);
+        fallbackKind = "muxed";
+
+        if (fallback && (await this.detectRangeLimit(fallback.url, fallback.contentLength))) {
+          fallback = null;
         }
+      }
+
+      if (fallback) {
+        console.warn(`[YouTube] IOS URL for ${videoId} was range-limited; using yt-dlp ${fallbackKind} URL`);
+        usedYtDlpFallback = true;
+        finalUrl = fallback.url;
+        finalMimeType = fallback.mimeType;
+        finalContentLength = fallback.contentLength;
+        if (fallback.title) finalTitle = fallback.title;
       } else if (ytDlpAvailable) {
         mode = "pipe";
       }
