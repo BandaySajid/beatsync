@@ -1665,6 +1665,10 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       if (currentAudioSource) {
         set({ selectedAudioUrl: currentAudioSource });
         void loadAudioSource(currentAudioSource);
+      } else if (!state.selectedAudioUrl && newAudioSources.length > 0) {
+        const firstUrl = newAudioSources[0].source.url;
+        set({ selectedAudioUrl: firstUrl });
+        void loadAudioSource(firstUrl);
       }
 
       // Demo mode preloads everything. In production, buffer the selected track

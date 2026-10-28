@@ -2,7 +2,7 @@ import { IS_DEMO_MODE } from "@/demo";
 import { generateAudioFileName, uploadBytes } from "@/lib/r2";
 import { globalManager } from "@/managers";
 import { MUSIC_PROVIDER_MANAGER } from "@/managers/MusicProviderManager";
-import { YOUTUBE_MANAGER } from "@/managers/YoutubeManager";
+import { YOUTUBE_MANAGER, YoutubeManager } from "@/managers/YoutubeManager";
 import { sendBroadcast } from "@/utils/responses";
 import type { HandlerFunction } from "@/websocket/types";
 import type { ExtractWSRequestFrom } from "@beatsync/shared";
@@ -44,11 +44,17 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
     let audioUrl: string;
 
     if (typeof message.trackId === "string") {
-      // It's a YouTube track
-      const ytUrl = `https://youtube.com/watch?v=${message.trackId}`;
-      console.log(`Processing YouTube search result stream: ${ytUrl}`);
-      const result = await YOUTUBE_MANAGER.getStreamSource(ytUrl);
-      audioUrl = result.publicUrl;
+      // It's a YouTube track: generate public URL instantly so it appears in queue with 0 latency
+      const videoId = message.trackId;
+      if (!/^[A-Za-z0-9_-]{11}$/.test(videoId)) {
+        throw new Error(`Invalid YouTube video ID: ${videoId}`);
+      }
+      const title = message.trackName ?? "YouTube Track";
+      audioUrl = YoutubeManager.getStreamUrl(videoId, title);
+      console.log(`[YouTube] Instant queue for "${title}" (${videoId}) via ${audioUrl}`);
+
+      // Start preloading video on disk in background
+      void YOUTUBE_MANAGER.preloadVideo(videoId);
     } else {
       // It's an Apple Music / Qobuz track
       const streamResponse = await MUSIC_PROVIDER_MANAGER.stream(message.trackId);
@@ -99,6 +105,8 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
         event: {
           type: "SET_AUDIO_SOURCES",
           sources,
+          currentAudioSource:
+            room.getPlaybackState().type === "playing" ? room.getPlaybackState().audioSource : undefined,
         },
       },
     });

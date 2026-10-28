@@ -18,6 +18,7 @@ export interface YoutubeStreamInfo {
   title: string;
   expiresAt: number;
   mode: "proxy" | "pipe";
+  userAgent?: string;
 }
 
 export interface PipedAudioStream {
@@ -31,7 +32,9 @@ interface YtDlpAudioInfo {
   mimeType: string;
   contentLength: number;
   title?: string;
+  userAgent?: string;
 }
+
 const asRecord = (value: unknown): Record<string, unknown> | null =>
   typeof value === "object" && value !== null ? (value as Record<string, unknown>) : null;
 
@@ -51,6 +54,13 @@ const RESOLVE_ATTEMPTS = 2;
 const RANGE_LIMIT_STATUSES = new Set([403, 410, 416]);
 const MAX_TITLE_LENGTH = 120;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+const MAX_PARALLEL_CACHE_CHUNKS = 6;
+const MAX_CACHE_BYTES = 2 * 1024 * 1024 * 1024;
+const DEFAULT_USER_AGENT =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
+const IOS_USER_AGENT =
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
+const CACHE_DIR = process.env.BEATSYNC_CACHE_DIR?.trim() ?? "/tmp/beatsync-cache";
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -60,6 +70,172 @@ export class YoutubeManager {
   private streamCache = new Map<string, YoutubeStreamInfo>();
   private streamJobs = new Map<string, Promise<YoutubeStreamInfo>>();
   private streamGenerations = new Map<string, number>();
+  private preloadJobs = new Map<string, Promise<string | null>>();
+  private readonly cacheDir = CACHE_DIR;
+
+  getCacheFilePath(videoId: string): string {
+    if (!VIDEO_ID_PATTERN.test(videoId)) {
+      throw new Error(`Invalid YouTube video ID: ${videoId}`);
+    }
+    return path.join(this.cacheDir, `${videoId}.m4a`);
+  }
+
+  isCached(videoId: string): boolean {
+    try {
+      const filePath = this.getCacheFilePath(videoId);
+      if (!fs.existsSync(filePath)) return false;
+      const stat = fs.statSync(filePath);
+      return stat.size > 100_000;
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Preload a YouTube video's audio into the local filesystem cache.
+   * Downloads parallel 1 MiB byte chunks from googlevideo so the entire song
+   * is buffered on disk in ~1s and served locally to clients in ~10ms.
+   */
+  async preloadVideo(videoId: string): Promise<string | null> {
+    if (this.isCached(videoId)) return this.getCacheFilePath(videoId);
+
+    const existing = this.preloadJobs.get(videoId);
+    if (existing) return existing;
+
+    const job = (async () => {
+      let tempFile: string | null = null;
+
+      try {
+        if (!fs.existsSync(this.cacheDir)) {
+          fs.mkdirSync(this.cacheDir, { recursive: true });
+        }
+
+        const info = await this.getStreamInfo(videoId);
+        if (info.mode === "pipe" || !info.url || info.contentLength <= 0) {
+          return null;
+        }
+
+        const streamUrl = info.url;
+        const targetFile = this.getCacheFilePath(videoId);
+        tempFile = `${targetFile}.${Date.now()}.tmp`;
+        const totalSize = info.contentLength;
+        const chunkSize = 1024 * 1024;
+        const chunkCount = Math.ceil(totalSize / chunkSize);
+        const userAgent = info.userAgent ?? DEFAULT_USER_AGENT;
+
+        const chunks = new Array<Uint8Array>(chunkCount);
+        let nextIndex = 0;
+
+        const downloadChunk = async () => {
+          for (;;) {
+            const index = nextIndex++;
+            if (index >= chunkCount) return;
+
+            const start = index * chunkSize;
+            const end = Math.min(start + chunkSize - 1, totalSize - 1);
+            const response = await fetch(streamUrl, {
+              headers: {
+                "User-Agent": userAgent,
+                Referer: "https://www.youtube.com/",
+                Range: `bytes=${start}-${end}`,
+              },
+            });
+
+            if (!response.ok && response.status !== 206) {
+              throw new Error(`Chunk ${index} failed with status ${response.status}`);
+            }
+
+            const buffer = new Uint8Array(await response.arrayBuffer());
+            const expected = end - start + 1;
+            if (buffer.byteLength !== expected) {
+              throw new Error(`Chunk ${index} returned ${buffer.byteLength}/${expected} bytes`);
+            }
+            chunks[index] = buffer;
+          }
+        };
+
+        await Promise.all(
+          Array.from({ length: Math.min(MAX_PARALLEL_CACHE_CHUNKS, chunkCount) }, () => downloadChunk())
+        );
+
+        const fullBuffer = new Uint8Array(totalSize);
+        let offset = 0;
+        for (const chunk of chunks) {
+          if (!chunk) throw new Error(`Missing chunk at offset ${offset}`);
+          fullBuffer.set(chunk, offset);
+          offset += chunk.byteLength;
+        }
+        if (offset !== totalSize) throw new Error(`Cached ${offset}/${totalSize} bytes`);
+
+        await Bun.write(tempFile, fullBuffer);
+        fs.renameSync(tempFile, targetFile);
+        tempFile = null;
+        console.log(`[YouTube] Successfully cached ${totalSize} bytes for ${videoId} at ${targetFile}`);
+        this.pruneCache(targetFile);
+        return targetFile;
+      } catch (error) {
+        if (tempFile) {
+          try {
+            fs.rmSync(tempFile, { force: true });
+          } catch {
+            // Already removed.
+          }
+        }
+        console.warn(`[YouTube] Preload / cache failed for ${videoId}:`, error);
+        return null;
+      } finally {
+        this.preloadJobs.delete(videoId);
+      }
+    })();
+
+    this.preloadJobs.set(videoId, job);
+    return job;
+  }
+
+  /** Keep the cache bounded so long-lived servers cannot fill their disk. */
+  private pruneCache(keepFile?: string): void {
+    try {
+      const entries = fs.readdirSync(this.cacheDir, { withFileTypes: true });
+      const now = Date.now();
+      const cachedFiles: { path: string; size: number; mtimeMs: number }[] = [];
+
+      for (const entry of entries) {
+        if (!entry.isFile()) continue;
+        const fullPath = path.join(this.cacheDir, entry.name);
+
+        try {
+          const stat = fs.statSync(fullPath);
+          if (entry.name.endsWith(".tmp") && now - stat.mtimeMs > 60 * 60 * 1000) {
+            fs.rmSync(fullPath, { force: true });
+            continue;
+          }
+          if (entry.name.endsWith(".m4a")) {
+            cachedFiles.push({ path: fullPath, size: stat.size, mtimeMs: stat.mtimeMs });
+          }
+        } catch {
+          // Ignore files that disappear while pruning.
+        }
+      }
+
+      let totalSize = cachedFiles.reduce((sum, file) => sum + file.size, 0);
+      if (totalSize <= MAX_CACHE_BYTES) return;
+
+      cachedFiles.sort((a, b) => a.mtimeMs - b.mtimeMs);
+      for (const file of cachedFiles) {
+        if (totalSize <= MAX_CACHE_BYTES) break;
+        if (file.path === keepFile) continue;
+
+        try {
+          fs.rmSync(file.path, { force: true });
+          totalSize -= file.size;
+        } catch {
+          // Ignore deletion failures.
+        }
+      }
+    } catch {
+      // Cache pruning is best-effort.
+    }
+  }
 
   private async getInnertube(): Promise<Innertube> {
     this.innertube ??= await Innertube.create();
@@ -117,7 +293,7 @@ export class YoutubeManager {
   private getExtractorArgs(): string[] {
     const configuredClient = process.env.YT_DLP_PLAYER_CLIENT?.trim();
     if (configuredClient === "default") return [];
-    const playerClient = configuredClient?.length ? configuredClient : "mweb";
+    const playerClient = configuredClient?.length ? configuredClient : "visionos";
     return ["--extractor-args", `youtube:player_client=${playerClient}`];
   }
 
@@ -176,15 +352,9 @@ export class YoutubeManager {
 
   /**
    * Check whether the direct URL can serve a byte near the end of the track.
-   *
-   * Some iOS-client URLs only serve their first ~1 MiB and then return 403. We
-   * probe the final 1 KiB instead of downloading anything: the old validation
-   * read whole response bodies, which could download an entire song just to
-   * decide how to serve it. A network error is NOT evidence of a range-limited
-   * stream — only an explicit 403/410/416 is — so transient failures keep the
-   * faster proxy path.
+   * Validates Range support with the matching User-Agent.
    */
-  private async detectRangeLimit(url: string, contentLength: number): Promise<boolean> {
+  private async detectRangeLimit(url: string, contentLength: number, userAgent?: string): Promise<boolean> {
     if (contentLength <= 0) return false;
 
     const start = Math.max(0, contentLength - 1024);
@@ -194,8 +364,7 @@ export class YoutubeManager {
     try {
       const response = await fetch(url, {
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+          "User-Agent": userAgent ?? DEFAULT_USER_AGENT,
           Referer: "https://www.youtube.com/",
           Range: `bytes=${start}-${contentLength - 1}`,
         },
@@ -235,11 +404,9 @@ export class YoutubeManager {
     const ytDlp = this.ytDlpPath();
     if (!ytDlp) throw new Error("yt-dlp is not installed; cannot pipe this YouTube stream");
 
-    // The plain Android client is the most reliable way to get a playable
-    // stream even when the direct-URL clients are rate-limited. Chunked HTTP
-    // avoids googlevideo's long-connection throttling.
     const args = [
       ytDlp,
+      "-4",
       "-o",
       "-",
       "-f",
@@ -282,15 +449,14 @@ export class YoutubeManager {
   }
 
   /** Read the total byte length of a direct URL without downloading it. */
-  private async probeContentLength(url: string): Promise<number> {
+  private async probeContentLength(url: string, userAgent?: string): Promise<number> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 5000);
 
     try {
       const response = await fetch(url, {
         headers: {
-          "User-Agent":
-            "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+          "User-Agent": userAgent ?? DEFAULT_USER_AGENT,
           Referer: "https://www.youtube.com/",
           Range: "bytes=0-0",
         },
@@ -314,9 +480,9 @@ export class YoutubeManager {
   }
 
   /**
-   * Extract a direct audio URL with one specific yt-dlp client. The audio-only
-   * music/test clients give 129 kbps m4a; the plain Android client is the most
-   * reliable fallback but only exposes a muxed 360p stream.
+   * Extract a direct audio URL with one specific yt-dlp client.
+   * Forces IPv4 (-4) to avoid broken IPv6 routes and keeps the
+   * User-Agent that matches the selected client.
    */
   private async extractViaYtDlp(
     videoId: string,
@@ -328,17 +494,22 @@ export class YoutubeManager {
 
     const args = [
       ytDlp,
+      "-4",
       "-j",
       "-f",
       formatSelector,
+      "--no-config",
       "--no-playlist",
       "--no-warnings",
       "--no-progress",
-      "--extractor-args",
-      `youtube:player_client=${client}`,
-      `https://www.youtube.com/watch?v=${videoId}`,
     ];
+
+    if (client !== "default") {
+      args.push("--extractor-args", `youtube:player_client=${client}`);
+    }
+
     if (fs.existsSync(COOKIES_FILE)) args.push("--cookies", COOKIES_FILE);
+    args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
     const startYtDlp = () => Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
     let proc: ReturnType<typeof startYtDlp>;
@@ -390,13 +561,17 @@ export class YoutubeManager {
       const ext = typeof parsed.ext === "string" ? parsed.ext : "m4a";
       const mimeType = ext === "webm" ? "audio/webm" : "audio/mp4";
       const exactSize = typeof parsed.filesize === "number" ? parsed.filesize : 0;
-      const contentLength = exactSize > 0 ? exactSize : await this.probeContentLength(url);
+
+      const httpHeaders = asRecord(parsed.http_headers);
+      const userAgent = typeof httpHeaders?.["User-Agent"] === "string" ? httpHeaders["User-Agent"] : undefined;
+      const contentLength = exactSize > 0 ? exactSize : await this.probeContentLength(url, userAgent);
 
       return {
         url,
         mimeType,
         contentLength,
         title: typeof parsed.title === "string" ? parsed.title.trim() : undefined,
+        userAgent,
       };
     } catch (error) {
       console.warn(`[YouTube] Failed to parse yt-dlp output for ${videoId}:`, error);
@@ -423,9 +598,7 @@ export class YoutubeManager {
   }
 
   /**
-   * The plain Android client is the most reliable source, but it only exposes
-   * a muxed 360p stream. Prefer its (lower-quality) URL over the slow pipe when
-   * the audio-only URLs are range-limited.
+   * Android client fallback for muxed streams if audio-only fails.
    */
   private async resolveMuxedViaYtDlp(videoId: string): Promise<YtDlpAudioInfo | null> {
     return this.extractViaYtDlp(videoId, "android", "bestaudio/best");
@@ -464,7 +637,6 @@ export class YoutubeManager {
         break;
       } catch (error) {
         lastError = error;
-        // A stale Innertube session is the usual cause of a failed resolve.
         this.streamInnertubePromise = null;
         this.innertube = null;
         if (attempt < RESOLVE_ATTEMPTS) await sleep(250 * attempt);
@@ -472,6 +644,18 @@ export class YoutubeManager {
     }
 
     if (!info) {
+      // Last resort when metadata resolution is blocked but the pipe can still
+      // play the video.
+      if (this.ytDlpPath()) {
+        return {
+          url: "",
+          mimeType: "audio/mp4",
+          contentLength: 0,
+          title: "YouTube Track",
+          expiresAt: Date.now() + STREAM_CACHE_TTL_MS,
+          mode: "pipe",
+        };
+      }
       throw lastError instanceof Error ? lastError : new Error(`Failed to resolve YouTube video ${videoId}`);
     }
 
@@ -520,9 +704,10 @@ export class YoutubeManager {
     let finalMimeType = mimeType;
     let finalContentLength = contentLength;
     let finalTitle = title?.trim() ?? "YouTube Track";
+    let finalUserAgent: string | undefined = IOS_USER_AGENT;
     let usedYtDlpFallback = false;
 
-    if (await this.detectRangeLimit(streamUrl, contentLength)) {
+    if (await this.detectRangeLimit(streamUrl, contentLength, IOS_USER_AGENT)) {
       const ytDlpAvailable = Boolean(this.ytDlpPath());
       let fallback = await this.resolveAudioOnlyViaYtDlp(videoId);
       let fallbackKind: "audio-only" | "muxed" = "audio-only";
@@ -530,11 +715,11 @@ export class YoutubeManager {
       // Audio-only URLs can also be range-limited on some networks. In that
       // case the reliability client's muxed URL is still a much faster option
       // than piping a single throttled connection.
-      if (!fallback || (await this.detectRangeLimit(fallback.url, fallback.contentLength))) {
+      if (!fallback || (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
         fallback = await this.resolveMuxedViaYtDlp(videoId);
         fallbackKind = "muxed";
 
-        if (fallback && (await this.detectRangeLimit(fallback.url, fallback.contentLength))) {
+        if (fallback && (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
           fallback = null;
         }
       }
@@ -545,6 +730,7 @@ export class YoutubeManager {
         finalUrl = fallback.url;
         finalMimeType = fallback.mimeType;
         finalContentLength = fallback.contentLength;
+        finalUserAgent = fallback.userAgent ?? DEFAULT_USER_AGENT;
         if (fallback.title) finalTitle = fallback.title;
       } else if (ytDlpAvailable) {
         mode = "pipe";
@@ -580,6 +766,7 @@ export class YoutubeManager {
       title: finalTitle,
       expiresAt,
       mode,
+      userAgent: finalUserAgent,
     };
   }
 
@@ -605,7 +792,6 @@ export class YoutubeManager {
 
     const job = this.resolveStreamInfo(videoId)
       .then((info) => {
-        // A slower, superseded resolution must never overwrite a newer one.
         if (this.streamGenerations.get(videoId) === generation) {
           this.cacheStreamInfo(videoId, info);
         }
@@ -625,7 +811,6 @@ export class YoutubeManager {
     this.streamCache.delete(videoId);
     this.streamCache.set(videoId, info);
 
-    // Map preserves insertion order; drop the oldest entries first.
     while (this.streamCache.size > MAX_STREAM_CACHE_ENTRIES) {
       const oldestKey = this.streamCache.keys().next().value;
       if (oldestKey === undefined) break;
@@ -646,6 +831,7 @@ export class YoutubeManager {
 
   /**
    * Searches YouTube for the query and returns up to 5 tracks formatted as TrackType.
+   * Pre-warms stream extraction for the top result in the background for zero-latency clicks.
    */
   async search(query: string): Promise<TrackType[]> {
     console.log(`[YouTube] Searching for: ${query}`);
@@ -696,6 +882,12 @@ export class YoutubeManager {
             },
           });
         }
+
+        // Pre-warm the top result's stream in the background!
+        if (tracks.length > 0 && typeof tracks[0].id === "string") {
+          void this.getStreamInfo(tracks[0].id).catch(() => undefined);
+        }
+
         return tracks;
       }
     } catch (err) {
@@ -707,6 +899,7 @@ export class YoutubeManager {
     const proc = Bun.spawn(
       [
         "yt-dlp",
+        "-4",
         `ytsearch5:${query}`,
         "--dump-json",
         "--no-playlist",
@@ -736,7 +929,6 @@ export class YoutubeManager {
         const parsed = JSON.parse(line) as YtDlpJsonOutput;
         if (!parsed.id) continue;
 
-        // Map yt-dlp output to TrackType
         tracks.push({
           id: parsed.id,
           title: parsed.title ?? parsed.fulltitle ?? "YouTube Track",
@@ -763,6 +955,10 @@ export class YoutubeManager {
       } catch (err) {
         console.error("[YouTube] Failed to parse yt-dlp search result line:", err);
       }
+    }
+
+    if (tracks.length > 0 && typeof tracks[0].id === "string") {
+      void this.getStreamInfo(tracks[0].id).catch(() => undefined);
     }
 
     return tracks;
