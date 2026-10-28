@@ -626,7 +626,62 @@ export class YoutubeManager {
     });
   }
 
+  /**
+   * Resolve a rangeable direct URL through yt-dlp. Used both as the fallback
+   * when Innertube is login-gated and when its IOS URL is range-limited.
+   */
+  private async resolveViaYtDlp(videoId: string): Promise<YoutubeStreamInfo | null> {
+    let fallback = await this.resolveAudioOnlyViaYtDlp(videoId);
+    let fallbackKind: "audio-only" | "muxed" = "audio-only";
+
+    if (!fallback || (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
+      fallback = await this.resolveMuxedViaYtDlp(videoId);
+      fallbackKind = "muxed";
+
+      if (fallback && (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
+        fallback = null;
+      }
+    }
+
+    if (!fallback) return null;
+
+    console.log(`[YouTube] Resolved ${videoId} via yt-dlp ${fallbackKind} URL`);
+    let expireMs = NaN;
+    try {
+      expireMs = Number(new URL(fallback.url).searchParams.get("expire")) * 1000;
+    } catch {
+      // Missing/malformed expire; use the cache TTL.
+    }
+
+    const expiresAt =
+      Number.isFinite(expireMs) && expireMs > 0
+        ? Math.min(expireMs - 5 * 60 * 1000, Date.now() + STREAM_CACHE_TTL_MS)
+        : Date.now() + STREAM_CACHE_TTL_MS;
+
+    return {
+      url: fallback.url,
+      mimeType: fallback.mimeType,
+      contentLength: fallback.contentLength,
+      title: fallback.title?.trim() ?? "YouTube Track",
+      expiresAt,
+      mode: "proxy",
+      userAgent: fallback.userAgent,
+    };
+  }
+
+  private createPipeInfo(): YoutubeStreamInfo {
+    return {
+      url: "",
+      mimeType: "audio/mp4",
+      contentLength: 0,
+      title: "YouTube Track",
+      expiresAt: Date.now() + STREAM_CACHE_TTL_MS,
+      mode: "pipe",
+    };
+  }
+
   private async resolveStreamInfo(videoId: string): Promise<YoutubeStreamInfo> {
+    const ytDlpAvailable = Boolean(this.ytDlpPath());
     let info: Awaited<ReturnType<Innertube["getBasicInfo"]>> | undefined;
     let lastError: unknown;
 
@@ -644,22 +699,18 @@ export class YoutubeManager {
     }
 
     if (!info) {
-      // Last resort when metadata resolution is blocked but the pipe can still
-      // play the video.
-      if (this.ytDlpPath()) {
-        return {
-          url: "",
-          mimeType: "audio/mp4",
-          contentLength: 0,
-          title: "YouTube Track",
-          expiresAt: Date.now() + STREAM_CACHE_TTL_MS,
-          mode: "pipe",
-        };
-      }
+      const ytDlpInfo = await this.resolveViaYtDlp(videoId);
+      if (ytDlpInfo) return ytDlpInfo;
+      if (ytDlpAvailable) return this.createPipeInfo();
       throw lastError instanceof Error ? lastError : new Error(`Failed to resolve YouTube video ${videoId}`);
     }
 
     if (info.playability_status?.status && info.playability_status.status !== "OK") {
+      // Login-gated for the anonymous/cookie Innertube session. yt-dlp's public
+      // clients often still resolve these, so try them before giving up.
+      const ytDlpInfo = await this.resolveViaYtDlp(videoId);
+      if (ytDlpInfo) return ytDlpInfo;
+      if (ytDlpAvailable) return this.createPipeInfo();
       throw new Error(`YouTube video ${videoId} is not playable: ${info.playability_status.status}`);
     }
 
@@ -699,74 +750,40 @@ export class YoutubeManager {
     // Some IOS-client URLs only serve their first ~1 MiB and then return 403.
     // Prefer a yt-dlp direct URL (usually fully rangeable) over piping stdout,
     // because the proxy can then use parallel ranges and seek correctly.
-    let mode: "proxy" | "pipe" = "proxy";
-    let finalUrl = streamUrl;
-    let finalMimeType = mimeType;
-    let finalContentLength = contentLength;
-    let finalTitle = title?.trim() ?? "YouTube Track";
-    let finalUserAgent: string | undefined = IOS_USER_AGENT;
-    let usedYtDlpFallback = false;
-
     if (await this.detectRangeLimit(streamUrl, contentLength, IOS_USER_AGENT)) {
-      const ytDlpAvailable = Boolean(this.ytDlpPath());
-      let fallback = await this.resolveAudioOnlyViaYtDlp(videoId);
-      let fallbackKind: "audio-only" | "muxed" = "audio-only";
+      const ytDlpInfo = await this.resolveViaYtDlp(videoId);
+      if (ytDlpInfo) return ytDlpInfo;
 
-      // Audio-only URLs can also be range-limited on some networks. In that
-      // case the reliability client's muxed URL is still a much faster option
-      // than piping a single throttled connection.
-      if (!fallback || (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
-        fallback = await this.resolveMuxedViaYtDlp(videoId);
-        fallbackKind = "muxed";
-
-        if (fallback && (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
-          fallback = null;
-        }
-      }
-
-      if (fallback) {
-        console.warn(`[YouTube] IOS URL for ${videoId} was range-limited; using yt-dlp ${fallbackKind} URL`);
-        usedYtDlpFallback = true;
-        finalUrl = fallback.url;
-        finalMimeType = fallback.mimeType;
-        finalContentLength = fallback.contentLength;
-        finalUserAgent = fallback.userAgent ?? DEFAULT_USER_AGENT;
-        if (fallback.title) finalTitle = fallback.title;
-      } else if (ytDlpAvailable) {
-        mode = "pipe";
-      }
-
-      if (mode === "proxy" && !usedYtDlpFallback) {
+      if (!ytDlpAvailable) {
         // No usable fallback: fail fast instead of serving a stream that will
         // 403 after the first megabyte.
         throw new Error(`YouTube stream for ${videoId} is range-limited and no yt-dlp fallback is available`);
       }
-    }
 
-    if (mode === "pipe") {
       console.warn(`[YouTube] Stream for ${videoId} is range-limited; using yt-dlp pipe fallback`);
+      return this.createPipeInfo();
     }
 
     let expireMs = NaN;
     try {
-      expireMs = Number(new URL(finalUrl).searchParams.get("expire")) * 1000;
+      expireMs = Number(new URL(streamUrl).searchParams.get("expire")) * 1000;
     } catch {
       // Non-standard URL host — expiresAt falls back to the cache TTL.
     }
 
     const expiresAt =
-      mode === "proxy" && Number.isFinite(expireMs) && expireMs > 0
+      Number.isFinite(expireMs) && expireMs > 0
         ? Math.min(expireMs - 5 * 60 * 1000, Date.now() + STREAM_CACHE_TTL_MS)
         : Date.now() + STREAM_CACHE_TTL_MS;
 
     return {
-      url: finalUrl,
-      mimeType: finalMimeType,
-      contentLength: finalContentLength,
-      title: finalTitle,
+      url: streamUrl,
+      mimeType,
+      contentLength,
+      title: title?.trim() ?? "YouTube Track",
       expiresAt,
-      mode,
-      userAgent: finalUserAgent,
+      mode: "proxy",
+      userAgent: IOS_USER_AGENT,
     };
   }
 
