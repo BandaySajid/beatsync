@@ -16,6 +16,9 @@ export type PositionType = z.infer<typeof PositionSchema>;
 
 export const AudioSourceSchema = z.object({
   url: z.string(),
+  // A YouTube track that is still being downloaded/extracted/uploaded to R2.
+  // Clients must not prefetch or play it until the server broadcasts the final URL.
+  preparing: z.boolean().optional(),
 });
 export type AudioSourceType = z.infer<typeof AudioSourceSchema>;
 

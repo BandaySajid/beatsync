@@ -41,11 +41,12 @@ export const QueueSortableItem = ({
 
   const isSelected = selectedAudioUrl === sourceState.source.url;
   const isPlayingThis = isSelected && isPlaying;
-  const isLoading = sourceState.status === "loading";
+  const isPreparing = sourceState.source.preparing === true;
+  const isLoading = sourceState.status === "loading" || isPreparing;
   const isError = sourceState.status === "error";
 
   const handleItemClick = (sourceState: AudioSourceState) => {
-    if (!canMutate) return;
+    if (!canMutate || sourceState.source.preparing) return;
 
     const source = sourceState.source;
     if (source.url === selectedAudioUrl) {
@@ -231,6 +232,7 @@ export const QueueSortableItem = ({
             )}
           >
             {extractFileNameFromUrl(sourceState.source.url)}
+            {isPreparing && <span className="text-xs text-neutral-500 ml-2">(preparing audio)</span>}
             {isError && sourceState.error && <span className="text-xs text-red-400 ml-2">({sourceState.error})</span>}
           </div>
         </div>

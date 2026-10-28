@@ -233,6 +233,63 @@ describe("syncClient", () => {
   });
 });
 
+describe("preparing sources and source replacement", () => {
+  const PREPARING_URL = "https://example.com/preparing.mp3";
+
+  it("rejects playback while a source is preparing", () => {
+    const room = new RoomManager(ROOM_ID);
+    room.addAudioSource({ url: PREPARING_URL, preparing: true });
+    const server = {} as BunServer;
+
+    expect(
+      room.updatePlaybackSchedulePlay({ type: "PLAY", audioSource: PREPARING_URL, trackTimeSeconds: 0 }, Date.now())
+    ).toBe(false);
+
+    broadcastMessages = [];
+    room.initiateAudioSourceLoad({ type: "PLAY", audioSource: PREPARING_URL, trackTimeSeconds: 0 }, "client-1", server);
+    expect(broadcastMessages).toHaveLength(0);
+  });
+
+  it("replaces a placeholder without losing the queue position or playback source", () => {
+    const room = new RoomManager(ROOM_ID);
+    room.addAudioSource({ url: PREPARING_URL });
+    room.updatePlaybackSchedulePlay({ type: "PLAY", audioSource: PREPARING_URL, trackTimeSeconds: 12 }, Date.now());
+
+    const sources = room.replaceAudioSource(PREPARING_URL, { url: "https://cdn.example.com/ready.m4a" });
+
+    expect(sources).toEqual([{ url: "https://cdn.example.com/ready.m4a" }]);
+    expect(room.getPlaybackState().audioSource).toBe("https://cdn.example.com/ready.m4a");
+    expect(room.getPlaybackState().trackPositionSeconds).toBe(12);
+  });
+
+  it("omits preparing sources from backups", () => {
+    const room = new RoomManager(ROOM_ID);
+    room.addAudioSource({ url: AUDIO_URL });
+    room.addAudioSource({ url: PREPARING_URL, preparing: true });
+
+    expect(room.createBackup().audioSources).toEqual([{ url: AUDIO_URL }]);
+  });
+});
+
+describe("restorePlaybackState", () => {
+  it("rebases the playback clock so restart downtime is not counted", () => {
+    const room = new RoomManager(ROOM_ID);
+    room.addAudioSource({ url: AUDIO_URL });
+    room.updatePlaybackSchedulePlay(
+      { type: "PLAY", audioSource: AUDIO_URL, trackTimeSeconds: 42 },
+      Date.now() - 300_000
+    );
+
+    const beforeRestore = Date.now();
+    room.restorePlaybackState(room.getPlaybackState());
+    const restored = room.getPlaybackState();
+
+    expect(restored.type).toBe("playing");
+    expect(restored.trackPositionSeconds).toBe(42);
+    expect(restored.serverTimeToExecute).toBeGreaterThanOrEqual(beforeRestore);
+  });
+});
+
 describe("reorderAudioSource", () => {
   it("should reorder audio sources when lengths match", () => {
     const room = new RoomManager(ROOM_ID);

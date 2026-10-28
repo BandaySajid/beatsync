@@ -47,6 +47,9 @@ const SetAudioSourcesSchema = z.object({
   type: z.literal("SET_AUDIO_SOURCES"),
   sources: z.array(AudioSourceSchema),
   currentAudioSource: z.string().optional(),
+  // URL swaps performed by the server (for example, a YouTube placeholder
+  // becoming its durable R2 audio file). Clients remap local selection/buffers.
+  replacedSources: z.array(z.object({ from: z.string(), to: z.string() })).optional(),
 });
 export type SetAudioSourcesType = z.infer<typeof SetAudioSourcesSchema>;
 

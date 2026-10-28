@@ -4,6 +4,7 @@ import { YOUTUBE_MANAGER, YoutubeManager } from "@/managers/YoutubeManager";
 import { sendBroadcast } from "@/utils/responses";
 import type { HandlerFunction } from "@/websocket/types";
 import type { ExtractWSRequestFrom } from "@beatsync/shared";
+import { prepareYoutubeAudioToR2 } from "@/websocket/handlers/youtubeAudioPipeline";
 
 export const handleAddYoutubeUrl: HandlerFunction<ExtractWSRequestFrom["ADD_YOUTUBE_URL"]> = async ({
   ws,
@@ -45,9 +46,14 @@ export const handleAddYoutubeUrl: HandlerFunction<ExtractWSRequestFrom["ADD_YOUT
 
   try {
     console.log(`[YouTube] Resolving stream for: ${youtubeUrl}`);
+    const videoId = YoutubeManager.getVideoId(youtubeUrl);
     const { publicUrl, title } = await YOUTUBE_MANAGER.getStreamSource(youtubeUrl);
 
-    const sources = room.addAudioSource({ url: publicUrl });
+    if (!videoId) {
+      throw new Error("Unable to determine YouTube video ID");
+    }
+
+    const sources = room.addAudioSource({ url: publicUrl, preparing: true });
 
     console.log(`[YouTube] Added "${title}" to room ${roomId} — ${sources.length} total sources`);
 
@@ -62,9 +68,22 @@ export const handleAddYoutubeUrl: HandlerFunction<ExtractWSRequestFrom["ADD_YOUT
         },
       },
     });
+
+    void prepareYoutubeAudioToR2({ roomId, videoId, title, placeholderUrl: publicUrl, server })
+      .catch((error) => console.error(`[YouTube] Background preparation failed for ${videoId}:`, error))
+      .finally(() => {
+        room.removeStreamJob(youtubeUrl);
+        sendBroadcast({
+          server,
+          roomId,
+          message: {
+            type: "STREAM_JOB_UPDATE",
+            activeJobCount: room.getActiveStreamJobCount(),
+          },
+        });
+      });
   } catch (error) {
     console.error(`[YouTube] Failed to process ${youtubeUrl}:`, error);
-  } finally {
     room.removeStreamJob(youtubeUrl);
     sendBroadcast({
       server,

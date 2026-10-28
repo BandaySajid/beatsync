@@ -181,6 +181,10 @@ export class RoomManager {
       console.warn(`Cannot load non-existent audio source: ${playAction.audioSource}`);
       return;
     }
+    if (audioSource.preparing) {
+      console.warn(`Cannot play audio source that is still preparing: ${playAction.audioSource}`);
+      return;
+    }
 
     // Set up timeout to execute play even if some clients don't respond
     const timeout = setTimeout(() => {
@@ -500,6 +504,22 @@ export class RoomManager {
   // Set all audio sources (used in backup restoration)
   setAudioSources(sources: AudioSourceType[]): AudioSourceType[] {
     this.audioSources = sources;
+    return this.audioSources;
+  }
+
+  /**
+   * Replace a placeholder source URL (e.g. a YouTube stream placeholder) with
+   * its durable R2 URL without dropping the queue position or playback state.
+   * Returns null when the room no longer contains that source.
+   */
+  replaceAudioSource(oldUrl: string, source: AudioSourceType): AudioSourceType[] | null {
+    const index = this.audioSources.findIndex((candidate) => candidate.url === oldUrl);
+    if (index === -1) return null;
+
+    this.audioSources[index] = source;
+    if (this.playbackState.audioSource === oldUrl) {
+      this.playbackState = { ...this.playbackState, audioSource: source.url };
+    }
     return this.audioSources;
   }
 
@@ -946,11 +966,15 @@ export class RoomManager {
   }
 
   updatePlaybackSchedulePlay(playSchema: PlayActionType, serverTimeToExecute: number): boolean {
-    // Validate that the audio source exists in the room
-    const trackExists = this.audioSources.some((source) => source.url === playSchema.audioSource);
+    // Validate that the audio source exists in the room and is playable.
+    const track = this.audioSources.find((source) => source.url === playSchema.audioSource);
 
-    if (!trackExists) {
+    if (!track) {
       console.warn(`Room ${this.roomId}: Attempted to play non-existent track: ${playSchema.audioSource}`);
+      return false;
+    }
+    if (track.preparing) {
+      console.warn(`Room ${this.roomId}: Attempted to play a track that is still preparing: ${playSchema.audioSource}`);
       return false;
     }
 
@@ -974,7 +998,8 @@ export class RoomManager {
     }
 
     // The track may have been removed between the play and the sync request.
-    if (!this.audioSources.some((source) => source.url === this.playbackState.audioSource)) {
+    const currentSource = this.audioSources.find((source) => source.url === this.playbackState.audioSource);
+    if (!currentSource || currentSource.preparing) {
       return;
     }
 
@@ -1041,7 +1066,9 @@ export class RoomManager {
   createBackup(): RoomBackupType {
     return {
       clientDatas: Array.from(this.clientData.values()),
-      audioSources: this.audioSources,
+      // In-flight YouTube downloads cannot resume after a restart. Keep only
+      // playable sources so restore never resurrects a permanently "preparing" row.
+      audioSources: this.audioSources.filter((source) => !source.preparing),
       globalVolume: this.globalVolume,
       lowPassFreq: this.lowPassFreq,
       playbackState: this.playbackState,
@@ -1237,7 +1264,13 @@ export class RoomManager {
   }
 
   restorePlaybackState(playbackState: RoomPlaybackState): void {
-    this.playbackState = playbackState;
+    // The backup's serverTimeToExecute is from before the restart. Counting the
+    // downtime as playback time made rooms resume far into (or past) the track.
+    // Rebase the clock to now and keep the saved track position.
+    this.playbackState = {
+      ...playbackState,
+      serverTimeToExecute: epochNow(),
+    };
   }
 
   /**

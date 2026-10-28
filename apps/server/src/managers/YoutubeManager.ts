@@ -55,12 +55,17 @@ const RANGE_LIMIT_STATUSES = new Set([403, 410, 416]);
 const MAX_TITLE_LENGTH = 120;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const MAX_PARALLEL_CACHE_CHUNKS = 6;
-const MAX_CACHE_BYTES = 2 * 1024 * 1024 * 1024;
+// Audio-only files are ~5-8 MB, so this holds roughly 60-100 tracks while
+// staying far away from the host's RAM/disk limits.
+const MAX_CACHE_BYTES = 512 * 1024 * 1024;
 const DEFAULT_USER_AGENT =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
 const IOS_USER_AGENT =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1";
-const CACHE_DIR = process.env.BEATSYNC_CACHE_DIR?.trim() ?? "/tmp/beatsync-cache";
+// Keep the cache on real disk. The previous /tmp default was a tmpfs on the
+// production host, so a large cache competed with system RAM. This new path
+// also gives us a clean directory that cannot contain old muxed video files.
+const CACHE_DIR = process.env.BEATSYNC_CACHE_DIR?.trim() ?? path.join(process.cwd(), "cache", "youtube");
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -103,7 +108,7 @@ export class YoutubeManager {
     if (existing) return existing;
 
     const job = (async () => {
-      let tempFile: string | null = null;
+      const tempFiles = new Set<string>();
 
       try {
         if (!fs.existsSync(this.cacheDir)) {
@@ -117,7 +122,11 @@ export class YoutubeManager {
 
         const streamUrl = info.url;
         const targetFile = this.getCacheFilePath(videoId);
-        tempFile = `${targetFile}.${Date.now()}.tmp`;
+        const stamp = Date.now();
+        const muxedTemp = `${targetFile}.${stamp}.source.tmp`;
+        const audioTemp = `${targetFile}.${stamp}.audio.tmp`;
+        tempFiles.add(muxedTemp);
+        tempFiles.add(audioTemp);
         const totalSize = info.contentLength;
         const chunkSize = 1024 * 1024;
         const chunkCount = Math.ceil(totalSize / chunkSize);
@@ -167,14 +176,29 @@ export class YoutubeManager {
         }
         if (offset !== totalSize) throw new Error(`Cached ${offset}/${totalSize} bytes`);
 
-        await Bun.write(tempFile, fullBuffer);
-        fs.renameSync(tempFile, targetFile);
-        tempFile = null;
-        console.log(`[YouTube] Successfully cached ${totalSize} bytes for ${videoId} at ${targetFile}`);
+        await Bun.write(muxedTemp, fullBuffer);
+
+        // The reliable android stream is muxed video+audio. Strip the video
+        // track with a stream copy: no re-encode, ~0.15s for a full song, and
+        // the resulting audio is the same 128kbps AAC as the audio-only format.
+        const extracted = await this.extractAudioFile(muxedTemp, audioTemp);
+        const finalTemp = extracted ? audioTemp : muxedTemp;
+        if (!extracted) {
+          console.warn(`[YouTube] ffmpeg extraction unavailable for ${videoId}; caching the muxed file`);
+        }
+
+        fs.renameSync(finalTemp, targetFile);
+        // The chosen temp was renamed; clean up the unused one immediately.
+        fs.rmSync(extracted ? muxedTemp : audioTemp, { force: true });
+        tempFiles.delete(muxedTemp);
+        tempFiles.delete(audioTemp);
+        console.log(
+          `[YouTube] Successfully cached ${fs.statSync(targetFile).size} audio bytes for ${videoId} at ${targetFile}`
+        );
         this.pruneCache(targetFile);
         return targetFile;
       } catch (error) {
-        if (tempFile) {
+        for (const tempFile of tempFiles) {
           try {
             fs.rmSync(tempFile, { force: true });
           } catch {
@@ -184,12 +208,62 @@ export class YoutubeManager {
         console.warn(`[YouTube] Preload / cache failed for ${videoId}:`, error);
         return null;
       } finally {
+        for (const tempFile of tempFiles) {
+          try {
+            fs.rmSync(tempFile, { force: true });
+          } catch {
+            // Already removed.
+          }
+        }
         this.preloadJobs.delete(videoId);
       }
     })();
 
     this.preloadJobs.set(videoId, job);
     return job;
+  }
+
+  /**
+   * Strip the video track from a muxed MP4 with a stream copy. Unlike a full
+   * transcode this takes ~0.15s, preserves the exact 128kbps AAC audio, and
+   * roughly halves the bytes sent to clients.
+   */
+  private async extractAudioFile(inputPath: string, outputPath: string): Promise<boolean> {
+    const ffmpeg = process.env.FFMPEG_PATH?.trim() ?? Bun.which("ffmpeg");
+    if (!ffmpeg) return false;
+
+    try {
+      const proc = Bun.spawn(
+        [
+          ffmpeg,
+          "-y",
+          "-loglevel",
+          "error",
+          "-nostdin",
+          "-i",
+          inputPath,
+          "-vn",
+          "-c:a",
+          "copy",
+          "-movflags",
+          "+faststart",
+          "-f",
+          "mp4",
+          outputPath,
+        ],
+        { stdout: "ignore", stderr: "pipe" }
+      );
+      const stderr = await new Response(proc.stderr).text();
+      const exitCode = await proc.exited;
+      if (exitCode !== 0) {
+        console.warn(`[YouTube] ffmpeg exited ${exitCode}: ${stderr.trim().slice(0, 200)}`);
+        return false;
+      }
+      return fs.existsSync(outputPath) && fs.statSync(outputPath).size > 100_000;
+    } catch (error) {
+      console.warn("[YouTube] ffmpeg audio extraction failed:", error);
+      return false;
+    }
   }
 
   /** Keep the cache bounded so long-lived servers cannot fill their disk. */

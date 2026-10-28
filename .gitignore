@@ -6,6 +6,8 @@ node_modules
 
 # uploads in server
 apps/server/uploads/*
+# server-side YouTube audio cache (durable copies live in R2)
+apps/server/cache/
 .DS_Store
 .vercel
 
