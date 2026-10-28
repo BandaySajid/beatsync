@@ -2,7 +2,7 @@ import { IS_DEMO_MODE } from "@/demo";
 import { generateAudioFileName, uploadBytes } from "@/lib/r2";
 import { globalManager } from "@/managers";
 import { MUSIC_PROVIDER_MANAGER } from "@/managers/MusicProviderManager";
-import { YOUTUBE_MANAGER, YoutubeManager } from "@/managers/YoutubeManager";
+import { YoutubeManager } from "@/managers/YoutubeManager";
 import { sendBroadcast } from "@/utils/responses";
 import type { HandlerFunction } from "@/websocket/types";
 import type { ExtractWSRequestFrom } from "@beatsync/shared";
@@ -52,9 +52,6 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
       const title = message.trackName ?? "YouTube Track";
       audioUrl = YoutubeManager.getStreamUrl(videoId, title);
       console.log(`[YouTube] Instant queue for "${title}" (${videoId}) via ${audioUrl}`);
-
-      // Start preloading video on disk in background
-      void YOUTUBE_MANAGER.preloadVideo(videoId);
     } else {
       // It's an Apple Music / Qobuz track
       const streamResponse = await MUSIC_PROVIDER_MANAGER.stream(message.trackId);

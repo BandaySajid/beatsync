@@ -583,12 +583,9 @@ export async function handleYoutubeAudio(videoId: string, req: Request): Promise
 
     const rangeHeader = req.headers.get("range");
 
-    // 2. Full track: stream immediately while warming the disk cache in the
-    // background. Waiting for the preload here made the first play slower.
+    // 2. Full track: stream immediately. The client's completion message warms
+    // the disk cache, so the first play never competes with a second download.
     if (!rangeHeader) {
-      if (req.method === "HEAD") return await handleFullAudio(videoId, info, req);
-
-      void YOUTUBE_MANAGER.preloadVideo(videoId);
       return await handleFullAudio(videoId, info, req);
     }
 
