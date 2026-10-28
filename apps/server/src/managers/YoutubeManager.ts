@@ -423,7 +423,6 @@ export class YoutubeManager {
       "--extractor-args",
       "youtube:player_client=android",
     ];
-    if (fs.existsSync(COOKIES_FILE)) args.push("--cookies", COOKIES_FILE);
     args.push(`https://www.youtube.com/watch?v=${videoId}`);
 
     const proc = Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
@@ -492,7 +491,7 @@ export class YoutubeManager {
     const ytDlp = this.ytDlpPath();
     if (!ytDlp) return null;
 
-    const args = [
+    const baseArgs = [
       ytDlp,
       "-4",
       "-j",
@@ -505,80 +504,91 @@ export class YoutubeManager {
     ];
 
     if (client !== "default") {
-      args.push("--extractor-args", `youtube:player_client=${client}`);
+      baseArgs.push("--extractor-args", `youtube:player_client=${client}`);
     }
+    baseArgs.push(`https://www.youtube.com/watch?v=${videoId}`);
 
-    if (fs.existsSync(COOKIES_FILE)) args.push("--cookies", COOKIES_FILE);
-    args.push(`https://www.youtube.com/watch?v=${videoId}`);
+    // Expired/incomplete cookies can make yt-dlp reject every format. Public
+    // clients work without them, so try anonymous first and only use the
+    // cookie jar when anonymous extraction fails.
+    const cookieAttempts = fs.existsSync(COOKIES_FILE) ? [false, true] : [false];
 
-    const startYtDlp = () => Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
-    let proc: ReturnType<typeof startYtDlp>;
-    try {
-      proc = startYtDlp();
-    } catch (error) {
-      console.warn(`[YouTube] Failed to start yt-dlp for ${videoId}:`, error);
-      return null;
-    }
+    for (const useCookies of cookieAttempts) {
+      const args = [...baseArgs];
+      if (useCookies) {
+        args.splice(args.length - 1, 0, "--cookies", COOKIES_FILE);
+      }
 
-    const killTimer = setTimeout(() => {
+      const startYtDlp = () => Bun.spawn(args, { stdout: "pipe", stderr: "pipe" });
+      let proc: ReturnType<typeof startYtDlp>;
       try {
-        proc.kill();
-      } catch {
-        // Process already exited.
-      }
-    }, 12_000);
-
-    try {
-      const [stdout, stderr, exitCode] = await Promise.all([
-        new Response(proc.stdout).text(),
-        new Response(proc.stderr).text(),
-        proc.exited,
-      ]);
-
-      if (exitCode !== 0) {
-        console.warn(
-          `[YouTube] yt-dlp (${client}) extraction failed for ${videoId} (exit ${exitCode}): ${stderr
-            .trim()
-            .slice(0, 200)}`
-        );
-        return null;
+        proc = startYtDlp();
+      } catch (error) {
+        console.warn(`[YouTube] Failed to start yt-dlp for ${videoId}:`, error);
+        continue;
       }
 
-      const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
-      const line = lines[lines.length - 1];
-      if (!line) return null;
+      const killTimer = setTimeout(() => {
+        try {
+          proc.kill();
+        } catch {
+          // Process already exited.
+        }
+      }, 12_000);
 
-      const parsed = JSON.parse(line) as Record<string, unknown>;
-      const url = typeof parsed.url === "string" ? parsed.url : null;
-      if (!url) return null;
+      try {
+        const [stdout, stderr, exitCode] = await Promise.all([
+          new Response(proc.stdout).text(),
+          new Response(proc.stderr).text(),
+          proc.exited,
+        ]);
 
-      const parsedUrl = new URL(url);
-      if (!/(^|\.)(googlevideo\.com|youtube\.com)$/.test(parsedUrl.hostname)) {
-        console.warn(`[YouTube] yt-dlp returned an unexpected stream host: ${parsedUrl.hostname}`);
-        return null;
+        if (exitCode !== 0) {
+          console.warn(
+            `[YouTube] yt-dlp (${client}${useCookies ? ",cookies" : ""}) extraction failed for ${videoId} (exit ${exitCode}): ${stderr
+              .trim()
+              .slice(0, 200)}`
+          );
+          continue;
+        }
+
+        const lines = stdout.trim().split(/\r?\n/).filter(Boolean);
+        const line = lines[lines.length - 1];
+        if (!line) continue;
+
+        const parsed = JSON.parse(line) as Record<string, unknown>;
+        const url = typeof parsed.url === "string" ? parsed.url : null;
+        if (!url) continue;
+
+        const parsedUrl = new URL(url);
+        if (!/(^|\.)(googlevideo\.com|youtube\.com)$/.test(parsedUrl.hostname)) {
+          console.warn(`[YouTube] yt-dlp returned an unexpected stream host: ${parsedUrl.hostname}`);
+          continue;
+        }
+
+        const ext = typeof parsed.ext === "string" ? parsed.ext : "m4a";
+        const mimeType = ext === "webm" ? "audio/webm" : "audio/mp4";
+        const exactSize = typeof parsed.filesize === "number" ? parsed.filesize : 0;
+
+        const httpHeaders = asRecord(parsed.http_headers);
+        const userAgent = typeof httpHeaders?.["User-Agent"] === "string" ? httpHeaders["User-Agent"] : undefined;
+        const contentLength = exactSize > 0 ? exactSize : await this.probeContentLength(url, userAgent);
+
+        return {
+          url,
+          mimeType,
+          contentLength,
+          title: typeof parsed.title === "string" ? parsed.title.trim() : undefined,
+          userAgent,
+        };
+      } catch (error) {
+        console.warn(`[YouTube] Failed to parse yt-dlp output for ${videoId}:`, error);
+      } finally {
+        clearTimeout(killTimer);
       }
-
-      const ext = typeof parsed.ext === "string" ? parsed.ext : "m4a";
-      const mimeType = ext === "webm" ? "audio/webm" : "audio/mp4";
-      const exactSize = typeof parsed.filesize === "number" ? parsed.filesize : 0;
-
-      const httpHeaders = asRecord(parsed.http_headers);
-      const userAgent = typeof httpHeaders?.["User-Agent"] === "string" ? httpHeaders["User-Agent"] : undefined;
-      const contentLength = exactSize > 0 ? exactSize : await this.probeContentLength(url, userAgent);
-
-      return {
-        url,
-        mimeType,
-        contentLength,
-        title: typeof parsed.title === "string" ? parsed.title.trim() : undefined,
-        userAgent,
-      };
-    } catch (error) {
-      console.warn(`[YouTube] Failed to parse yt-dlp output for ${videoId}:`, error);
-      return null;
-    } finally {
-      clearTimeout(killTimer);
     }
+
+    return null;
   }
 
   /**
