@@ -1,5 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { YoutubeManager } from "@/managers/YoutubeManager";
+
+describe("YoutubeManager.prewarm", () => {
+  test("downloads only the top pick and resolves the next two", () => {
+    const manager = new YoutubeManager();
+    const preload = spyOn(manager, "preloadVideo").mockResolvedValue(null);
+    const resolve = spyOn(manager, "getStreamInfo").mockRejectedValue(new Error("offline"));
+
+    manager.prewarm(["aaaaaaaaaaa", "bbbbbbbbbbb", "ccccccccccc", "ddddddddddd"]);
+
+    expect(preload.mock.calls).toEqual([["aaaaaaaaaaa"]]);
+    expect(resolve.mock.calls.map(([id]) => id)).toEqual(["bbbbbbbbbbb", "ccccccccccc"]);
+  });
+});
 
 describe("YoutubeManager.getVideoId", () => {
   test.each([
