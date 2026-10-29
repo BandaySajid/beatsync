@@ -45,6 +45,30 @@ const readText = (value: unknown, nestedKey: string): string | undefined => {
   return typeof nested === "string" ? nested : undefined;
 };
 
+const toYoutubeTrack = (id: string, title: string, author: string, duration: number): TrackType => ({
+  id,
+  title,
+  duration,
+  parental_warning: false,
+  track_number: 1,
+  performer: {
+    name: author,
+    id: 0,
+  },
+  album: {
+    title: "YouTube",
+    id: "0",
+    duration,
+    parental_warning: false,
+    release_date_original: new Date().toISOString(),
+    image: {
+      thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      small: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      large: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+    },
+  },
+});
+
 const COOKIES_FILE = path.join(process.cwd(), "cookies.txt");
 const STREAM_PATH_PREFIX = "/stream/youtube";
 const STREAM_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
@@ -919,6 +943,16 @@ export class YoutubeManager {
     }
   }
 
+  /**
+   * Resolve the first few streams before anyone clicks: a cold resolve needs yt-dlp (~5s),
+   * a warm one is a cache hit. Failures are ignored here; play retries them.
+   */
+  prewarm(videoIds: string[]): void {
+    for (const videoId of videoIds.slice(0, PREWARM_COUNT)) {
+      this.getStreamInfo(videoId).catch(() => undefined);
+    }
+  }
+
   /** Resolves a YouTube URL to a stable local streaming URL for a room queue. */
   async getStreamSource(youtubeUrl: string): Promise<{ publicUrl: string; title: string }> {
     const videoId = YoutubeManager.getVideoId(youtubeUrl);
@@ -959,29 +993,7 @@ export class YoutubeManager {
           const title = readText(record.title, "text") ?? "YouTube Video";
           const author = readText(record.author, "name") ?? "YouTube";
 
-          tracks.push({
-            id,
-            title,
-            duration,
-            parental_warning: false,
-            track_number: 1,
-            performer: {
-              name: author,
-              id: 0,
-            },
-            album: {
-              title: "YouTube",
-              id: "0",
-              duration,
-              parental_warning: false,
-              release_date_original: new Date().toISOString(),
-              image: {
-                thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-                small: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-                large: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
-              },
-            },
-          });
+          tracks.push(toYoutubeTrack(id, title, author, duration));
         }
 
         // Pre-warm the top result's stream in the background!
@@ -1063,6 +1075,32 @@ export class YoutubeManager {
     }
 
     return tracks;
+  }
+
+  /**
+   * YouTube Music's radio for a video: more from the same artist plus songs with a similar
+   * mood and genre (a ghazal leads to more ghazals). Excludes the seed video itself.
+   */
+  async getSuggestions(videoId: string): Promise<TrackType[]> {
+    const yt = await this.getInnertube();
+    const panel = await yt.music.getUpNext(videoId, true);
+    const tracks: TrackType[] = [];
+
+    for (const item of panel.contents) {
+      // shortcut: skips PlaylistPanelVideoWrapper entries (alternate versions); unwrap `primary` if radios come back thin.
+      const record = asRecord(item);
+      if (!record) continue;
+      const id = record.video_id;
+      if (typeof id !== "string" || id === videoId) continue;
+
+      const artists = Array.isArray(record.artists) ? (record.artists as unknown[]) : [];
+      const author = readText(artists[0], "name") ?? readText(record.author, "name") ?? "YouTube";
+      const seconds = asRecord(record.duration)?.seconds;
+      const title = readText(record.title, "text") ?? "YouTube Track";
+      tracks.push(toYoutubeTrack(id, title, author, typeof seconds === "number" ? seconds : 0));
+    }
+
+    return tracks.slice(0, MAX_SUGGESTIONS);
   }
 }
 

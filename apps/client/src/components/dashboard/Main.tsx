@@ -2,6 +2,7 @@ import { cn } from "@/lib/utils";
 import { motion } from "motion/react";
 import { Queue } from "../Queue";
 import { InlineSearch } from "./InlineSearch";
+import { SimilarSongs } from "./SimilarSongs";
 
 export const Main = () => {
   return (
@@ -17,6 +18,7 @@ export const Main = () => {
           <InlineSearch />
         </div>
         <Queue className="mb-8" />
+        <SimilarSongs className="mb-8" />
       </motion.div>
     </motion.div>
   );

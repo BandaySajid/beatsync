@@ -1,4 +1,5 @@
 import { IS_DEMO_MODE } from "@/demo";
+import { refreshSuggestions } from "@/lib/suggestions";
 import { globalManager } from "@/managers";
 import { YOUTUBE_MANAGER, YoutubeManager } from "@/managers/YoutubeManager";
 import { sendBroadcast } from "@/utils/responses";

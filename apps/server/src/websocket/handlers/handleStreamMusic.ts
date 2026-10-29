@@ -1,5 +1,6 @@
 import { IS_DEMO_MODE } from "@/demo";
 import { generateAudioFileName, uploadBytes } from "@/lib/r2";
+import { refreshSuggestions } from "@/lib/suggestions";
 import { globalManager } from "@/managers";
 import { MUSIC_PROVIDER_MANAGER } from "@/managers/MusicProviderManager";
 import { YoutubeManager } from "@/managers/YoutubeManager";
@@ -150,6 +151,9 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
         },
       },
     });
+
+    // shortcut: suggestions only for YouTube tracks; Apple Music/Qobuz IDs have no radio to seed from.
+    if (typeof message.trackId === "string") void refreshSuggestions(room, server, message.trackId);
   } catch (error) {
     console.error("Error in handleStreamMusic:", error);
   } finally {

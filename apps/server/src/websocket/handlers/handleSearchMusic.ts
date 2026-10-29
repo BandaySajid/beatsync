@@ -16,6 +16,7 @@ export const handleSearchMusic: HandlerFunction<ExtractWSRequestFrom["SEARCH_MUS
 
     const data = appleResult.status === "fulfilled" ? appleResult.value : null;
     const ytTracks = ytResult.status === "fulfilled" ? ytResult.value : [];
+    YOUTUBE_MANAGER.prewarm(ytTracks.map((track) => String(track.id)));
 
     if (data) {
       // Inject YouTube tracks at the beginning

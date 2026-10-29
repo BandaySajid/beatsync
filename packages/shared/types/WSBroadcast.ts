@@ -7,6 +7,7 @@ import {
   SetPlaybackControlsSchema,
 } from "./WSRequest";
 import { AudioSourceSchema, ChatMessageSchema, PositionSchema } from "./basic";
+import { TrackSchema } from "./provider";
 
 // Server -> client message types (mirrors ClientActionEnum for client -> server)
 export const ServerActionEnum = z.enum([
@@ -18,6 +19,7 @@ export const ServerActionEnum = z.enum([
   "NTP_RESPONSE", // Reply to an NTP_REQUEST time sync probe
   "SEARCH_RESPONSE", // Music search results
   "LIVENESS_PING", // Liveness probe; client replies with LIVENESS_PONG
+  "SUGGESTIONS", // Songs similar to the last YouTube track added to the room
 ]);
 
 // Client change
@@ -149,6 +151,11 @@ const DemoAudioReadyCountSchema = z.object({
 });
 export type DemoAudioReadyCountType = z.infer<typeof DemoAudioReadyCountSchema>;
 
+const SuggestionsSchema = z.object({
+  type: z.literal(ServerActionEnum.enum.SUGGESTIONS),
+  tracks: z.array(TrackSchema),
+});
+
 // Export both broadcast types
 export const WSBroadcastSchema = z.discriminatedUnion("type", [
   ScheduledActionSchema,
@@ -156,5 +163,6 @@ export const WSBroadcastSchema = z.discriminatedUnion("type", [
   StreamJobUpdateSchema,
   DemoUserCountSchema,
   DemoAudioReadyCountSchema,
+  SuggestionsSchema,
 ]);
 export type WSBroadcastType = z.infer<typeof WSBroadcastSchema>;
