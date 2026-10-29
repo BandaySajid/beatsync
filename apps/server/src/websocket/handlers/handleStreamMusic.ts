@@ -81,6 +81,7 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
       },
     });
 
+    void refreshSuggestions(room, server, videoId);
     void prepareYoutubeAudioToR2({ roomId, videoId, title, placeholderUrl: audioUrl, server })
       .catch((error) => console.error(`[YouTube] Background preparation failed for ${videoId}:`, error))
       .finally(() => {
@@ -151,9 +152,6 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
         },
       },
     });
-
-    // shortcut: suggestions only for YouTube tracks; Apple Music/Qobuz IDs have no radio to seed from.
-    if (typeof message.trackId === "string") void refreshSuggestions(room, server, message.trackId);
   } catch (error) {
     console.error("Error in handleStreamMusic:", error);
   } finally {

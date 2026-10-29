@@ -70,6 +70,7 @@ export const handleAddYoutubeUrl: HandlerFunction<ExtractWSRequestFrom["ADD_YOUT
       },
     });
 
+    void refreshSuggestions(room, server, videoId);
     void prepareYoutubeAudioToR2({ roomId, videoId, title, placeholderUrl: publicUrl, server })
       .catch((error) => console.error(`[YouTube] Background preparation failed for ${videoId}:`, error))
       .finally(() => {

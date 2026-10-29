@@ -7,9 +7,10 @@ import type { TrackType } from "@beatsync/shared";
 // Keyed by the room object so a room's suggestions are dropped with the room.
 const roomSuggestions = new WeakMap<RoomManager, TrackType[]>();
 
-// Queued YouTube sources are proxy URLs shaped /stream/youtube/<videoId>/<title>.
+// Queued YouTube sources carry the video ID: /stream/youtube/<id>/... while preparing,
+// then .../<title>☆youtube-<id>.m4a once moved to R2. 11-char IDs make collisions negligible.
 const isQueued = (room: RoomManager, videoId: string) =>
-  room.getAudioSources().some((source) => source.url.includes(`/${videoId}/`));
+  room.getAudioSources().some((source) => source.url.includes(videoId));
 
 /** Fetch songs similar to `videoId` and broadcast them to the room. Never throws. */
 export async function refreshSuggestions(room: RoomManager, server: BunServer, videoId: string): Promise<void> {

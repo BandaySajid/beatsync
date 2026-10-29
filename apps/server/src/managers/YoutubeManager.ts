@@ -78,6 +78,9 @@ const RESOLVE_ATTEMPTS = 2;
 const RANGE_LIMIT_STATUSES = new Set([403, 410, 416]);
 const MAX_TITLE_LENGTH = 120;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+const MAX_SUGGESTIONS = 10;
+// Each prewarm can spawn a yt-dlp process, so keep this small.
+const PREWARM_COUNT = 3;
 const MAX_PARALLEL_CACHE_CHUNKS = 6;
 // Audio-only files are ~5-8 MB, so this holds roughly 60-100 tracks while
 // staying far away from the host's RAM/disk limits.
@@ -690,70 +693,22 @@ export class YoutubeManager {
   }
 
   /**
-   * Resolve a direct audio-only (129 kbps m4a) URL through yt-dlp.
-   *
-   * Some videos only yield range-limited URLs from youtubei's IOS client
-   * (first ~1 MiB then 403). yt-dlp's music clients usually return a fully
-   * rangeable URL, which our parallel-range proxy can stream fast. The two
-   * audio-only clients are raced because both are occasionally rate-limited.
-   */
-  private async resolveAudioOnlyViaYtDlp(videoId: string): Promise<YtDlpAudioInfo | null> {
-    const audioOnlyFormat = "bestaudio[ext=m4a][abr<=160]/bestaudio[ext=m4a]";
-    return this.firstSuccessful([
-      this.extractViaYtDlp(videoId, "ios_music", audioOnlyFormat),
-      this.extractViaYtDlp(videoId, "android_testsuite", audioOnlyFormat),
-    ]);
-  }
-
-  /**
-   * Android client fallback for muxed streams if audio-only fails.
-   */
-  private async resolveMuxedViaYtDlp(videoId: string): Promise<YtDlpAudioInfo | null> {
-    return this.extractViaYtDlp(videoId, "android", "bestaudio/best");
-  }
-
-  private firstSuccessful<T>(promises: Promise<T | null>[]): Promise<T | null> {
-    return new Promise((resolve) => {
-      let settled = 0;
-      let done = false;
-
-      for (const promise of promises) {
-        void promise
-          .then((value) => {
-            if (!done && value) {
-              done = true;
-              resolve(value);
-            }
-          })
-          .catch(() => undefined)
-          .finally(() => {
-            settled++;
-            if (settled === promises.length && !done) resolve(null);
-          });
-      }
-    });
-  }
-
-  /**
    * Resolve a rangeable direct URL through yt-dlp. Used both as the fallback
    * when Innertube is login-gated and when its IOS URL is range-limited.
+   *
+   * Only the android client: yt-dlp dropped ios_music/android_testsuite and silently
+   * falls back to its default clients for them (measured 3-84s per call vs a steady
+   * ~2.7s for android). Android's stream is muxed; preloadVideo strips the video with ffmpeg.
    */
   private async resolveViaYtDlp(videoId: string): Promise<YoutubeStreamInfo | null> {
-    let fallback = await this.resolveAudioOnlyViaYtDlp(videoId);
-    let fallbackKind: "audio-only" | "muxed" = "audio-only";
-
-    if (!fallback || (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
-      fallback = await this.resolveMuxedViaYtDlp(videoId);
-      fallbackKind = "muxed";
-
-      if (fallback && (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
-        fallback = null;
-      }
+    let fallback = await this.extractViaYtDlp(videoId, "android", "bestaudio/best");
+    if (fallback && (await this.detectRangeLimit(fallback.url, fallback.contentLength, fallback.userAgent))) {
+      fallback = null;
     }
 
     if (!fallback) return null;
 
-    console.log(`[YouTube] Resolved ${videoId} via yt-dlp ${fallbackKind} URL`);
+    console.log(`[YouTube] Resolved ${videoId} via yt-dlp android URL`);
     let expireMs = NaN;
     try {
       expireMs = Number(new URL(fallback.url).searchParams.get("expire")) * 1000;
