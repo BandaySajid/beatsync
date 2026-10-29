@@ -1,10 +1,14 @@
 pre-commit:
   parallel: true
   commands:
+    # Fix only the staged files, and let lefthook re-stage them (stage_fixed). A manual
+    # `git add {staged_files}` from a subdirectory runs with GIT_DIR set and no work tree,
+    # so git treats the subdirectory as the repo root and stages copies at the wrong paths.
     client-check:
       root: "apps/client/"
       glob: "*.{ts,tsx,json}"
-      run: bun run format && bun run lint:fix && git add {staged_files}
+      run: bunx prettier --write {staged_files} && bunx eslint --fix --no-warn-ignored {staged_files}
+      stage_fixed: true
     client-typecheck:
       root: "apps/client/"
       glob: "*.{ts,tsx}"
@@ -12,7 +16,8 @@ pre-commit:
     server-check:
       root: "apps/server/"
       glob: "*.{ts,tsx,json}"
-      run: bun run format && bun run lint:fix && git add {staged_files}
+      run: bunx prettier --write {staged_files} && bunx eslint --fix --no-warn-ignored {staged_files}
+      stage_fixed: true
     server-typecheck:
       root: "apps/server/"
       glob: "*.{ts,tsx}"
