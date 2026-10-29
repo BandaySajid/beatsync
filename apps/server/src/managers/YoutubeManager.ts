@@ -42,6 +42,30 @@ const readText = (value: unknown, nestedKey: string): string | undefined => {
   return typeof nested === "string" ? nested : undefined;
 };
 
+const toYoutubeTrack = (id: string, title: string, author: string, duration: number): TrackType => ({
+  id,
+  title,
+  duration,
+  parental_warning: false,
+  track_number: 1,
+  performer: {
+    name: author,
+    id: 0,
+  },
+  album: {
+    title: "YouTube",
+    id: "0",
+    duration,
+    parental_warning: false,
+    release_date_original: new Date().toISOString(),
+    image: {
+      thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      small: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+      large: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
+    },
+  },
+});
+
 const COOKIES_FILE = path.join(process.cwd(), "cookies.txt");
 const STREAM_PATH_PREFIX = "/stream/youtube";
 const STREAM_CACHE_TTL_MS = 2 * 60 * 60 * 1000;
@@ -51,6 +75,9 @@ const RESOLVE_ATTEMPTS = 2;
 const RANGE_LIMIT_STATUSES = new Set([403, 410, 416]);
 const MAX_TITLE_LENGTH = 120;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
+const MAX_SUGGESTIONS = 10;
+// Each prewarm can spawn two yt-dlp processes, so keep this small.
+const PREWARM_COUNT = 3;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -633,6 +660,16 @@ export class YoutubeManager {
     }
   }
 
+  /**
+   * Resolve the first few streams before anyone clicks: a cold resolve needs yt-dlp (~5s),
+   * a warm one is a cache hit. Failures are ignored here; play retries them.
+   */
+  prewarm(videoIds: string[]): void {
+    for (const videoId of videoIds.slice(0, PREWARM_COUNT)) {
+      this.getStreamInfo(videoId).catch(() => undefined);
+    }
+  }
+
   /** Resolves a YouTube URL to a stable local streaming URL for a room queue. */
   async getStreamSource(youtubeUrl: string): Promise<{ publicUrl: string; title: string }> {
     const videoId = YoutubeManager.getVideoId(youtubeUrl);
@@ -672,29 +709,7 @@ export class YoutubeManager {
           const title = readText(record.title, "text") ?? "YouTube Video";
           const author = readText(record.author, "name") ?? "YouTube";
 
-          tracks.push({
-            id,
-            title,
-            duration,
-            parental_warning: false,
-            track_number: 1,
-            performer: {
-              name: author,
-              id: 0,
-            },
-            album: {
-              title: "YouTube",
-              id: "0",
-              duration,
-              parental_warning: false,
-              release_date_original: new Date().toISOString(),
-              image: {
-                thumbnail: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-                small: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-                large: `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
-              },
-            },
-          });
+          tracks.push(toYoutubeTrack(id, title, author, duration));
         }
         return tracks;
       }
@@ -736,36 +751,46 @@ export class YoutubeManager {
         const parsed = JSON.parse(line) as YtDlpJsonOutput;
         if (!parsed.id) continue;
 
-        // Map yt-dlp output to TrackType
-        tracks.push({
-          id: parsed.id,
-          title: parsed.title ?? parsed.fulltitle ?? "YouTube Track",
-          duration: parsed.duration ?? 0,
-          parental_warning: false,
-          track_number: 1,
-          performer: {
-            name: parsed.uploader ?? "YouTube",
-            id: 0,
-          },
-          album: {
-            title: "YouTube",
-            id: "0",
-            duration: parsed.duration ?? 0,
-            parental_warning: false,
-            release_date_original: new Date().toISOString(),
-            image: {
-              thumbnail: `https://i.ytimg.com/vi/${parsed.id}/hqdefault.jpg`,
-              small: `https://i.ytimg.com/vi/${parsed.id}/hqdefault.jpg`,
-              large: `https://i.ytimg.com/vi/${parsed.id}/maxresdefault.jpg`,
-            },
-          },
-        });
+        tracks.push(
+          toYoutubeTrack(
+            parsed.id,
+            parsed.title ?? parsed.fulltitle ?? "YouTube Track",
+            parsed.uploader ?? "YouTube",
+            parsed.duration ?? 0
+          )
+        );
       } catch (err) {
         console.error("[YouTube] Failed to parse yt-dlp search result line:", err);
       }
     }
 
     return tracks;
+  }
+
+  /**
+   * YouTube Music's radio for a video: more from the same artist plus songs with a similar
+   * mood and genre (a ghazal leads to more ghazals). Excludes the seed video itself.
+   */
+  async getSuggestions(videoId: string): Promise<TrackType[]> {
+    const yt = await this.getInnertube();
+    const panel = await yt.music.getUpNext(videoId, true);
+    const tracks: TrackType[] = [];
+
+    for (const item of panel.contents) {
+      // shortcut: skips PlaylistPanelVideoWrapper entries (alternate versions); unwrap `primary` if radios come back thin.
+      const record = asRecord(item);
+      if (!record) continue;
+      const id = record.video_id;
+      if (typeof id !== "string" || id === videoId) continue;
+
+      const artists = Array.isArray(record.artists) ? (record.artists as unknown[]) : [];
+      const author = readText(artists[0], "name") ?? readText(record.author, "name") ?? "YouTube";
+      const seconds = asRecord(record.duration)?.seconds;
+      const title = readText(record.title, "text") ?? "YouTube Track";
+      tracks.push(toYoutubeTrack(id, title, author, typeof seconds === "number" ? seconds : 0));
+    }
+
+    return tracks.slice(0, MAX_SUGGESTIONS);
   }
 }
 

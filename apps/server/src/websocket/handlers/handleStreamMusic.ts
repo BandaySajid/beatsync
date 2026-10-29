@@ -1,8 +1,9 @@
 import { IS_DEMO_MODE } from "@/demo";
 import { generateAudioFileName, uploadBytes } from "@/lib/r2";
+import { refreshSuggestions } from "@/lib/suggestions";
 import { globalManager } from "@/managers";
 import { MUSIC_PROVIDER_MANAGER } from "@/managers/MusicProviderManager";
-import { YOUTUBE_MANAGER } from "@/managers/YoutubeManager";
+import { YOUTUBE_MANAGER, YoutubeManager } from "@/managers/YoutubeManager";
 import { sendBroadcast } from "@/utils/responses";
 import type { HandlerFunction } from "@/websocket/types";
 import type { ExtractWSRequestFrom } from "@beatsync/shared";
@@ -44,11 +45,20 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
     let audioUrl: string;
 
     if (typeof message.trackId === "string") {
-      // It's a YouTube track
-      const ytUrl = `https://youtube.com/watch?v=${message.trackId}`;
-      console.log(`Processing YouTube search result stream: ${ytUrl}`);
-      const result = await YOUTUBE_MANAGER.getStreamSource(ytUrl);
-      audioUrl = result.publicUrl;
+      // It's a YouTube track. Queue it instantly and resolve the stream in the background:
+      // the /stream proxy awaits this same in-flight resolution when clients load the track.
+      const videoId = message.trackId;
+      const queuedUrl = YoutubeManager.getStreamUrl(videoId, message.trackName ?? "YouTube Track");
+      audioUrl = queuedUrl;
+      YOUTUBE_MANAGER.getStreamInfo(videoId).catch((error: unknown) => {
+        console.error(`[YouTube] Failed to resolve ${videoId}; removing it from room ${roomId}:`, error);
+        const { updated } = room.removeAudioSources([queuedUrl]);
+        sendBroadcast({
+          server,
+          roomId,
+          message: { type: "ROOM_EVENT", event: { type: "SET_AUDIO_SOURCES", sources: updated } },
+        });
+      });
     } else {
       // It's an Apple Music / Qobuz track
       const streamResponse = await MUSIC_PROVIDER_MANAGER.stream(message.trackId);
@@ -102,6 +112,9 @@ export const handleStreamMusic: HandlerFunction<ExtractWSRequestFrom["STREAM_MUS
         },
       },
     });
+
+    // shortcut: suggestions only for YouTube tracks; Apple Music/Qobuz IDs have no radio to seed from.
+    if (typeof message.trackId === "string") void refreshSuggestions(room, server, message.trackId);
   } catch (error) {
     console.error("Error in handleStreamMusic:", error);
   } finally {

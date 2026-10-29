@@ -184,4 +184,11 @@ export const WS_RESPONSE_REGISTRY: WebsocketResponseRegistry = {
     },
     description: "Demo mode: clients with audio loaded",
   },
+
+  [ServerActionEnum.enum.SUGGESTIONS]: {
+    handle: ({ response }) => {
+      useGlobalStore.setState({ suggestions: response.tracks });
+    },
+    description: "Songs similar to the last YouTube track added",
+  },
 };

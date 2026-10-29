@@ -33,6 +33,7 @@ import {
   SearchResponseType,
   SetAudioSourcesType,
   SpatialConfigType,
+  TrackType,
   epochNow,
 } from "@beatsync/shared";
 import { Mutex } from "async-mutex";
@@ -148,6 +149,9 @@ interface GlobalStateValues {
   searchQuery: string;
   searchOffset: number;
   hasMoreResults: boolean;
+
+  // Songs similar to the last YouTube track added (server-broadcast)
+  suggestions: TrackType[];
 
   // Stream job tracking
   activeStreamJobs: number;
@@ -297,6 +301,8 @@ const initialState: GlobalStateValues = {
   searchQuery: "",
   searchOffset: 0,
   hasMoreResults: false,
+
+  suggestions: [],
 
   // Stream job tracking
   activeStreamJobs: 0,

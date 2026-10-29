@@ -1,4 +1,5 @@
 import { IS_DEMO_MODE } from "@/demo";
+import { refreshSuggestions } from "@/lib/suggestions";
 import { globalManager } from "@/managers";
 import { YOUTUBE_MANAGER, YoutubeManager } from "@/managers/YoutubeManager";
 import { sendBroadcast } from "@/utils/responses";
@@ -62,6 +63,9 @@ export const handleAddYoutubeUrl: HandlerFunction<ExtractWSRequestFrom["ADD_YOUT
         },
       },
     });
+
+    const videoId = YoutubeManager.getVideoId(youtubeUrl);
+    if (videoId) void refreshSuggestions(room, server, videoId);
   } catch (error) {
     console.error(`[YouTube] Failed to process ${youtubeUrl}:`, error);
   } finally {
