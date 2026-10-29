@@ -25,6 +25,7 @@ export function mockR2(overrides: Record<string, ReturnType<typeof mock>> = {}):
     uploadFileToKey: mock(() => Promise.resolve("https://cdn.example.com/mock-audio.m4a")),
     uploadBytes: mock(() => Promise.resolve("https://cdn.example.com/mock-audio.m4a")),
     getObjectInfo: mock(() => Promise.resolve({ exists: false, metadata: {} })),
+    listObjectsWithPrefix: mock(() => Promise.resolve([])),
     getPublicUrlForKey: mock((key: string) => `https://cdn.example.com/${key}`),
     cleanupOrphanedRooms: mock(() => ({
       orphanedRooms: [],

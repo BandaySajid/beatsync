@@ -745,6 +745,9 @@ export class YoutubeManager {
 
   private async resolveStreamInfo(videoId: string): Promise<YoutubeStreamInfo> {
     const ytDlpAvailable = Boolean(this.ytDlpPath());
+    // Start yt-dlp alongside Innertube: Innertube wins in ~1s when its URL is usable, and
+    // when it is range-limited or gated yt-dlp is already ~1s in instead of starting late.
+    const ytDlpRace = ytDlpAvailable ? this.resolveViaYtDlp(videoId).catch(() => null) : Promise.resolve(null);
     let info: Awaited<ReturnType<Innertube["getBasicInfo"]>> | undefined;
     let lastError: unknown;
 
@@ -762,7 +765,7 @@ export class YoutubeManager {
     }
 
     if (!info) {
-      const ytDlpInfo = await this.resolveViaYtDlp(videoId);
+      const ytDlpInfo = await ytDlpRace;
       if (ytDlpInfo) return ytDlpInfo;
       if (ytDlpAvailable) return this.createPipeInfo();
       throw lastError instanceof Error ? lastError : new Error(`Failed to resolve YouTube video ${videoId}`);
@@ -771,7 +774,7 @@ export class YoutubeManager {
     if (info.playability_status?.status && info.playability_status.status !== "OK") {
       // Login-gated for the anonymous/cookie Innertube session. yt-dlp's public
       // clients often still resolve these, so try them before giving up.
-      const ytDlpInfo = await this.resolveViaYtDlp(videoId);
+      const ytDlpInfo = await ytDlpRace;
       if (ytDlpInfo) return ytDlpInfo;
       if (ytDlpAvailable) return this.createPipeInfo();
       throw new Error(`YouTube video ${videoId} is not playable: ${info.playability_status.status}`);
@@ -814,7 +817,7 @@ export class YoutubeManager {
     // Prefer a yt-dlp direct URL (usually fully rangeable) over piping stdout,
     // because the proxy can then use parallel ranges and seek correctly.
     if (await this.detectRangeLimit(streamUrl, contentLength, IOS_USER_AGENT)) {
-      const ytDlpInfo = await this.resolveViaYtDlp(videoId);
+      const ytDlpInfo = await ytDlpRace;
       if (ytDlpInfo) return ytDlpInfo;
 
       if (!ytDlpAvailable) {

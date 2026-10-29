@@ -8,7 +8,7 @@ import type { TrackType } from "@beatsync/shared";
 const roomSuggestions = new WeakMap<RoomManager, TrackType[]>();
 
 // Queued YouTube sources carry the video ID: /stream/youtube/<id>/... while preparing,
-// then .../<title>☆youtube-<id>.m4a once moved to R2. 11-char IDs make collisions negligible.
+// then .../youtube/<id>/<title>___yt.m4a once moved to R2. 11-char IDs make collisions negligible.
 const isQueued = (room: RoomManager, videoId: string) =>
   room.getAudioSources().some((source) => source.url.includes(videoId));
 

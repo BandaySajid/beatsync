@@ -1,4 +1,4 @@
-import { getObjectInfo, getPublicUrlForKey, uploadFileToKey } from "@/lib/r2";
+import { getPublicUrlForKey, listObjectsWithPrefix, uploadFileToKey } from "@/lib/r2";
 import { globalManager } from "@/managers";
 import { YOUTUBE_MANAGER } from "@/managers/YoutubeManager";
 import { sendBroadcast } from "@/utils/responses";
@@ -61,14 +61,19 @@ export async function prepareYoutubeAudioToR2({
       .replace(/\s+/g, " ")
       .trim()
       .slice(0, 100) || "YouTube Track";
-  const key = `room-${roomId}/${safeTitle}${R2_AUDIO_FILE_NAME_DELIMITER}youtube-${videoId}.m4a`;
+  // Shared across rooms (outside room-<id>/, so room cleanup never deletes it): any room
+  // that adds this video again reuses the upload. Expire the youtube/ prefix with an R2
+  // lifecycle rule, since nothing else deletes it.
+  const prefix = `youtube/${videoId}/`;
+  const key = `${prefix}${safeTitle}${R2_AUDIO_FILE_NAME_DELIMITER}yt.m4a`;
   const r2Url = getPublicUrlForKey(key);
 
   try {
-    const existing = await getObjectInfo(key);
-    if (existing.exists) {
-      console.log(`[YouTube] Reusing R2 audio for ${videoId} at ${key}`);
-      broadcastSources(roomId, server, placeholderUrl, r2Url);
+    // Listing the prefix finds the upload even if it was saved under a different title.
+    const existingKey = (await listObjectsWithPrefix(prefix))?.[0]?.Key;
+    if (existingKey) {
+      console.log(`[YouTube] Reusing shared R2 audio for ${videoId} at ${existingKey}`);
+      broadcastSources(roomId, server, placeholderUrl, getPublicUrlForKey(existingKey));
       return;
     }
 
@@ -84,6 +89,10 @@ export async function prepareYoutubeAudioToR2({
     if (!currentRoom?.getAudioSources().some((source) => source.url === placeholderUrl)) {
       return;
     }
+
+    // Playable now: the /stream route serves this local audio-only file while R2 uploads.
+    // Clients keep the decoded buffer across the R2 swap below, so nobody downloads twice.
+    broadcastSources(roomId, server, placeholderUrl);
 
     const startedAt = performance.now();
     await uploadFileToKey(cachePath, key, "audio/mp4", { roomId, videoId, source: "youtube" }, R2_CACHE_CONTROL);
