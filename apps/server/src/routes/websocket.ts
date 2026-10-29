@@ -1,4 +1,5 @@
 import { DEMO_ROOM_ID, IS_DEMO_MODE, isValidAdminSecret } from "@/demo";
+import { globalManager } from "@/managers";
 import { errorResponse } from "@/utils/responses";
 import type { BunServer, WSData } from "@/utils/websocket";
 
@@ -9,20 +10,29 @@ export const handleWebSocketUpgrade = (req: Request, server: BunServer) => {
   const roomId = url.searchParams.get("roomId");
   const username = url.searchParams.get("username");
   const clientId = url.searchParams.get("clientId");
+  const clientSecret = url.searchParams.get("clientSecret");
   const adminSecret = url.searchParams.get("admin");
   const creatorSecret = url.searchParams.get("creator");
 
-  if (!roomId || !username || !clientId) {
+  if (!roomId || !username || !clientId || !clientSecret) {
     // Check which parameters are missing and log them
     const missingParams = [];
 
     if (!roomId) missingParams.push("roomId");
     if (!username) missingParams.push("username");
     if (!clientId) missingParams.push("clientId");
+    if (!clientSecret) missingParams.push("clientSecret");
 
     console.log(`WebSocket connection attempt missing parameters: ${missingParams.join(", ")}`);
 
-    return errorResponse("roomId, username and clientId are required");
+    return errorResponse("roomId, username, clientId and clientSecret are required");
+  }
+
+  // Every room member sees every clientId, so the ID alone must not let someone take
+  // over another client's session (and with it, their admin status).
+  if (globalManager.getRoom(roomId)?.isClientSecretValid(clientId, clientSecret) === false) {
+    console.warn(`Rejected connection to room ${roomId}: wrong secret for clientId ${clientId}`);
+    return errorResponse("This client ID belongs to another session", 403);
   }
 
   if (IS_DEMO_MODE && roomId !== DEMO_ROOM_ID) {
@@ -42,6 +52,7 @@ export const handleWebSocketUpgrade = (req: Request, server: BunServer) => {
     roomId,
     username: isCreator ? "freemanjiang" : username,
     clientId,
+    clientSecret,
     isAdmin,
     isCreator,
   };

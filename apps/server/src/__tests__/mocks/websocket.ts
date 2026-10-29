@@ -2,10 +2,16 @@ import type { ServerWebSocket } from "bun";
 import { mock } from "bun:test";
 import type { BunServer, WSData } from "@/utils/websocket";
 
-export function createMockWs(data: { clientId: string; username?: string; roomId?: string }): ServerWebSocket<WSData> {
+export function createMockWs(data: {
+  clientId: string;
+  clientSecret?: string;
+  username?: string;
+  roomId?: string;
+}): ServerWebSocket<WSData> {
   return {
     data: {
       clientId: data.clientId,
+      clientSecret: data.clientSecret ?? `secret-${data.clientId}`,
       username: data.username ?? `user-${data.clientId}`,
       roomId: data.roomId ?? "test-room",
     },
