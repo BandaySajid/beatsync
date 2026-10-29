@@ -213,6 +213,7 @@ interface GlobalState extends GlobalStateValues {
   resetStore: () => void;
   setReconnectionInfo: (info: { isReconnecting: boolean; currentAttempt: number; maxAttempts: number }) => void;
   setPlaybackControlsPermissions: (permissions: PlaybackControlsPermissionsType) => void;
+  hydratePersistedState: () => void;
 
   // Search methods
   setSearchResults: (results: SearchResponseType | null, append?: boolean) => void;
@@ -239,6 +240,77 @@ interface GlobalState extends GlobalStateValues {
   handleLoadAudioSource: (sources: LoadAudioSourceType) => void;
   broadcastReorder: (urls: AudioSourceType[]) => void;
 }
+
+const SYNC_STORAGE_KEY = "beatsync:sync-state-v1";
+
+interface PersistedSyncState {
+  hasUserStartedSystem: boolean;
+  isSynced: boolean;
+  syncMeasurements: NTPMeasurement[];
+  offsetEstimate: number;
+  roundTripEstimate: number;
+}
+
+const readPersistedSyncState = (): PersistedSyncState | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(SYNC_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return null;
+    const record = parsed as Record<string, unknown>;
+    const measurements = Array.isArray(record.syncMeasurements)
+      ? record.syncMeasurements.filter(
+          (measurement): measurement is NTPMeasurement =>
+            typeof measurement === "object" &&
+            measurement !== null &&
+            ["t0", "t1", "t2", "t3", "roundTripDelay", "clockOffset"].every(
+              (key) => typeof (measurement as Record<string, unknown>)[key] === "number"
+            )
+        )
+      : [];
+    return {
+      hasUserStartedSystem: record.hasUserStartedSystem === true,
+      isSynced: record.isSynced === true,
+      syncMeasurements: measurements,
+      offsetEstimate: typeof record.offsetEstimate === "number" ? record.offsetEstimate : 0,
+      roundTripEstimate: typeof record.roundTripEstimate === "number" ? record.roundTripEstimate : 0,
+    };
+  } catch {
+    return null;
+  }
+};
+
+const persistSyncState = (state: {
+  hasUserStartedSystem: boolean;
+  isSynced: boolean;
+  syncMeasurements: NTPMeasurement[];
+  offsetEstimate: number;
+  roundTripEstimate: number;
+}): void => {
+  if (typeof window === "undefined") return;
+  try {
+    const snapshot: PersistedSyncState = {
+      hasUserStartedSystem: state.hasUserStartedSystem,
+      isSynced: state.isSynced,
+      syncMeasurements: state.syncMeasurements,
+      offsetEstimate: state.offsetEstimate,
+      roundTripEstimate: state.roundTripEstimate,
+    };
+    sessionStorage.setItem(SYNC_STORAGE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // Best-effort UX persistence only.
+  }
+};
+
+const clearPersistedSyncState = (): void => {
+  if (typeof window === "undefined") return;
+  try {
+    sessionStorage.removeItem(SYNC_STORAGE_KEY);
+  } catch {
+    // Storage may be unavailable.
+  }
+};
 
 // Define initial state values
 const initialState: GlobalStateValues = {
@@ -268,7 +340,8 @@ const initialState: GlobalStateValues = {
   demoUserCount: 0,
   demoAudioReadyCount: 0,
 
-  // NTP state
+  // NTP state. Hydrated from sessionStorage after mount (same-tab refresh) so
+  // the server-rendered markup and the first client render always match.
   syncMeasurements: [],
   offsetEstimate: 0,
   roundTripEstimate: 0,
@@ -276,7 +349,7 @@ const initialState: GlobalStateValues = {
   nudgeOffsetMs: 0,
   probeStats: { totalSent: 0, pureCount: 0, impureCount: 0 },
 
-  // Loading state
+  // Loading state. A completed Start System is restored after mount.
   isInitingSystem: true,
   hasUserStartedSystem: false,
 
@@ -364,6 +437,17 @@ const AUDIO_DOWNLOAD_STALL_TIMEOUT_MS = 20_000;
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+const SELECTED_AUDIO_STORAGE_KEY = "beatsync:selected-audio-url";
+
+const readPersistedSelectedAudio = (): string | null => {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(SELECTED_AUDIO_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+};
+
 const downloadBufferFromURL = async (data: {
   url: string;
   onProgress?: (loaded: number, total: number) => void;
@@ -390,7 +474,13 @@ const downloadBufferFromURL = async (data: {
     try {
       armStallTimer();
 
-      const response = await fetch(resolvedUrl, { signal: controller.signal, cache: "no-store" });
+      // R2/CDN audio is immutable and safe to reuse across refreshes. Only the
+      // relative YouTube proxy path is short-lived and must bypass the HTTP cache.
+      const canUseHttpCache = !data.url.startsWith("/");
+      const response = await fetch(resolvedUrl, {
+        signal: controller.signal,
+        cache: canUseHttpCache ? "default" : "no-store",
+      });
 
       if (!response.ok) {
         const detail = await response.text().catch(() => "");
@@ -552,6 +642,10 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         console.warn(`[Audio] Ignoring load for a source that is no longer in the queue: ${url}`);
         return false;
       }
+      if (existing.source.preparing) {
+        console.log(`[Audio] Waiting for source preparation before loading: ${url}`);
+        return false;
+      }
 
       if (existing.status === "loaded") {
         // Update LRU queue when accessing an already loaded buffer
@@ -653,6 +747,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
         const source = get().audioSources.find((as) => as.source.url === url);
         if (!source) continue;
+        if (source.source.preparing) continue;
 
         // Already buffered or in flight counts toward the window.
         if (source.status === "loaded" || source.status === "loading") {
@@ -676,6 +771,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     for (const as of state.audioSources) {
       if (!IS_DEMO_MODE && loaded >= MAX_CACHED_BUFFERS) break;
       if (as.source.url === skip) continue;
+      if (as.source.preparing) continue;
       if (as.status === "idle") {
         void loadAudioSource(as.source.url);
         loaded++;
@@ -707,6 +803,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     }
     console.log(reason);
     set({ isInitingSystem: true, hasUserStartedSystem: false });
+    persistSyncState(get());
   };
 
   const _initializeAudio = async () => {
@@ -841,6 +938,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
       // Update the initialization state
       set({ isInitingSystem: isIniting });
+      persistSyncState(get());
     },
 
     /**
@@ -852,7 +950,10 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
      */
     changeAudioSource: (url) => {
       const state = get();
-      const wasPlaying = state.isPlaying; // Store if it was playing *before* stopping
+      const target = state.audioSources.find((audioSource) => audioSource.source.url === url);
+      if (!target || target.source.preparing) return false;
+
+      const wasPlaying = state.isPlaying; // Store if was playing *before* stopping
 
       // Stop any current playback immediately when switching tracks
       if (state.isPlaying && state.audioPlayer) {
@@ -922,6 +1023,11 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       }
 
       const audioSourceState = state.audioSources[audioIndex];
+
+      if (audioSourceState?.source.preparing) {
+        console.warn(`[Schedule] Ignoring play for a source that is still preparing: ${data.audioSource}`);
+        return;
+      }
 
       // Select the target before waiting for its buffer, so a server-driven
       // play (autoplay/sync) updates the UI even while the download runs.
@@ -1079,10 +1185,10 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       const state = get();
       const { socket } = getSocket(state);
 
-      // Use selected audio or fall back to first audio source
+      // Use selected audio or fall back to the first playable audio source
       let audioId = state.selectedAudioUrl;
-      if (!audioId && state.audioSources.length > 0) {
-        audioId = state.audioSources[0].source.url;
+      if (!audioId) {
+        audioId = state.audioSources.find((as) => !as.source.preparing && as.source.url.length > 0)?.source.url ?? "";
       }
 
       if (!audioId) {
@@ -1091,6 +1197,10 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       }
 
       const selectedSource = state.audioSources.find((as) => as.source.url === audioId);
+      if (selectedSource?.source.preparing) {
+        console.warn("Cannot broadcast play: selected source is still preparing");
+        return;
+      }
       const sourceLoaded = selectedSource?.status === "loaded";
 
       // This call happens inside the user's click gesture: resume a suspended
@@ -1237,6 +1347,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         isSynced: false,
         // nudgeOffsetMs is intentionally NOT reset — it's a user preference persisted on the server
       });
+      persistSyncState(get());
     },
 
     addProbePairResult: (result) => {
@@ -1257,6 +1368,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         probeStats: getProbeStats(),
         ...(nowSynced ? { isSynced: true } : {}),
       });
+      persistSyncState(get());
 
       // In demo mode, NTP sync just completed — eagerly load idle audio sources
       // (they arrived from handleOpen before sync finished)
@@ -1314,7 +1426,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       }
       if (audioContext.state !== "running") {
         console.log("AudioContext still suspended, aborting play");
-        toast.error("Audio context is suspended. Please tap play again.");
+        toast.info("Tap the screen to resume audio", { id: "resume-audio" });
         return;
       }
 
@@ -1630,7 +1742,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       return state.audioSources.find((as) => as.source.url === state.selectedAudioUrl) || null;
     },
 
-    async handleSetAudioSources({ sources, currentAudioSource }) {
+    async handleSetAudioSources({ sources, currentAudioSource, replacedSources }) {
       // Wait for audio initialization to complete if it's in progress
       if (initializationMutex.isLocked()) {
         await initializationMutex.waitForUnlock();
@@ -1641,22 +1753,21 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       // Detect tracks newly added to an existing queue so they can start
       // downloading immediately, before anyone presses play.
       const previousUrls = new Set(state.audioSources.map((as) => as.source.url));
-      const addedUrls =
-        state.audioSources.length > 0
-          ? sources.map((source) => source.url).filter((url) => !previousUrls.has(url))
-          : [];
+      const addedUrls = sources.map((source) => source.url).filter((url) => !previousUrls.has(url));
 
       // Keep only the buffers that are still part of the playlist. The queue
       // previously started with every source URL (not just loaded buffers),
       // which made the LRU accounting wrong and let loaded buffers accumulate.
       const newQueue = evictRemovedSourcesFromQueue(sources);
 
-      // Create new audioSources array (preserving loaded buffers for tracks still in playlist)
+      // Create new audioSources array (preserving loaded buffers for tracks
+      // still in the playlist), but always take the latest source object so a
+      // preparing -> ready transition is visible to the queue UI.
       const existingByUrl = new Map(state.audioSources.map((as) => [as.source.url, as]));
       const newAudioSources: AudioSourceState[] = sources.map((source) => {
         const existing = existingByUrl.get(source.url);
         if (existing) {
-          return existing;
+          return { ...existing, source };
         }
         return {
           source,
@@ -1664,42 +1775,51 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         };
       });
 
-      // Update state immediately to show all sources (with idle states) and cleaned queue
-      set({ audioSources: newAudioSources, bufferAccessQueue: newQueue });
+      const isPlayable = (audioSource: AudioSourceState) =>
+        audioSource.source.url.length > 0 && !audioSource.source.preparing;
 
-      // If currentAudioSource is provided from server, update selectedAudioUrl and start loading it
-      if (currentAudioSource) {
-        set({ selectedAudioUrl: currentAudioSource });
-        void loadAudioSource(currentAudioSource);
+      // A server-side URL swap (YouTube placeholder -> R2) should keep the
+      // user's current selection. The server's playback source wins, then the
+      // remapped/persisted selection, then the first playable source.
+      const replacement = replacedSources?.find((swap) => swap.from === state.selectedAudioUrl);
+      const remappedSelected = replacement?.to ?? state.selectedAudioUrl;
+      const persistedSelected = readPersistedSelectedAudio();
+      const canAutoSelect = !state.selectedAudioUrl || Boolean(replacement);
+      const preferredUrl =
+        [currentAudioSource, remappedSelected, persistedSelected].find(
+          (url) => url && newAudioSources.some((as) => as.source.url === url && isPlayable(as))
+        ) ?? (canAutoSelect ? newAudioSources.find(isPlayable)?.source.url : undefined);
+
+      set({
+        audioSources: newAudioSources,
+        bufferAccessQueue: newQueue,
+        selectedAudioUrl: preferredUrl ?? "",
+      });
+
+      if (preferredUrl) {
+        void loadAudioSource(preferredUrl);
+      } else if (state.selectedAudioUrl && state.isPlaying) {
+        // The selected/playing source was removed and nothing playable replaced it.
+        state.pauseAudio({ when: 0 });
       }
 
       // Demo mode preloads everything. In production, buffer the selected track
       // and the next few queue entries so pressing play (or skipping) is instant.
       if (IS_DEMO_MODE) {
         if (get().isSynced) {
-          eagerLoadIdleSources({ skip: currentAudioSource });
+          eagerLoadIdleSources({ skip: preferredUrl });
         }
       } else {
-        prefetchSources({ aroundUrl: currentAudioSource ?? get().selectedAudioUrl });
+        prefetchSources({ aroundUrl: preferredUrl ?? get().selectedAudioUrl });
 
-        // Warm the newest addition first — this is what makes a freshly added
-        // YouTube/uploaded track play without waiting for a full download.
+        // Warm the newest playable addition first. Preparing sources are skipped
+        // until the server broadcasts their durable R2 URL.
         for (const url of addedUrls.slice(-1)) {
-          void loadAudioSource(url);
+          const added = newAudioSources.find((as) => as.source.url === url);
+          if (added && isPlayable(added)) {
+            void loadAudioSource(url);
+          }
         }
-      }
-
-      // Check if the currently selected/playing track was removed
-      const currentStillExists = newAudioSources.some((as) => as.source.url === state.selectedAudioUrl);
-
-      if (!currentStillExists && state.selectedAudioUrl) {
-        // Stop playback if current track was removed
-        if (state.isPlaying) {
-          state.pauseAudio({ when: 0 });
-        }
-
-        // Clear selected track - don't auto-select another
-        set({ selectedAudioUrl: "" });
       }
     },
 
@@ -1733,9 +1853,22 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       // are no longer in the queue.
       audioLoadPromises.clear();
 
+      try {
+        localStorage.removeItem(SELECTED_AUDIO_STORAGE_KEY);
+      } catch {
+        // Storage may be unavailable (private mode / quota); state still resets.
+      }
+      clearPersistedSyncState();
+
       // Reset state to initial values
       set({
         ...initialState,
+        hasUserStartedSystem: false,
+        isInitingSystem: true,
+        isSynced: false,
+        syncMeasurements: [],
+        offsetEstimate: 0,
+        roundTripEstimate: 0,
       });
 
       // Reinitialize audio player state (but reuse the same context)
@@ -1743,6 +1876,20 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     },
     setReconnectionInfo: (info) => set({ reconnectionInfo: info }),
     setPlaybackControlsPermissions: (permissions) => set({ playbackControlsPermissions: permissions }),
+
+    hydratePersistedState: () => {
+      const persisted = readPersistedSyncState();
+      if (!persisted) return;
+
+      set({
+        hasUserStartedSystem: persisted.hasUserStartedSystem,
+        isSynced: persisted.isSynced,
+        syncMeasurements: persisted.syncMeasurements,
+        offsetEstimate: persisted.offsetEstimate,
+        roundTripEstimate: persisted.roundTripEstimate,
+        ...(persisted.hasUserStartedSystem ? { isInitingSystem: false } : {}),
+      });
+    },
 
     // Search methods
     setSearchResults: (results, append = false) => {
@@ -1858,6 +2005,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
     // Audio source methods
     handleLoadAudioSource: ({ audioSourceToPlay }: LoadAudioSourceType) => {
+      if (audioSourceToPlay.preparing) return;
       set({ selectedAudioUrl: audioSourceToPlay.url });
       // Handles every state: coalesces in-flight loads, retries errored ones,
       // and instantly reports an already-loaded buffer.
@@ -1865,3 +2013,22 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     },
   };
 });
+
+// Persist the user's selected track across refreshes. The queue update handler
+// restores it only when that URL is still present; a removed track falls back
+// to the room's playback source or the first playable queue item.
+if (typeof window !== "undefined") {
+  useGlobalStore.subscribe((state, previousState) => {
+    if (state.selectedAudioUrl === previousState.selectedAudioUrl) return;
+
+    try {
+      if (state.selectedAudioUrl) {
+        localStorage.setItem(SELECTED_AUDIO_STORAGE_KEY, state.selectedAudioUrl);
+      } else {
+        localStorage.removeItem(SELECTED_AUDIO_STORAGE_KEY);
+      }
+    } catch {
+      // Best-effort UX persistence only.
+    }
+  });
+}

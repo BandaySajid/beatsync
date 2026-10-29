@@ -59,10 +59,12 @@ function getTotalFromResponse(response: Response, fallback: number): number {
   return match ? Number(match[1]) : fallback;
 }
 
-function buildUpstreamHeaders(range?: ByteRange): Headers {
+function buildUpstreamHeaders(info?: YoutubeStreamInfo, range?: ByteRange): Headers {
+  const userAgent =
+    info?.userAgent ??
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 15_7_3) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Safari/605.1.15";
   const headers = new Headers({
-    "User-Agent":
-      "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+    "User-Agent": userAgent,
     Referer: "https://www.youtube.com/",
   });
   if (range) headers.set("Range", `bytes=${range.start}-${range.end}`);
@@ -104,7 +106,7 @@ async function requestUpstream({
     try {
       response = await fetch(currentInfo.url, {
         method,
-        headers: buildUpstreamHeaders(range),
+        headers: buildUpstreamHeaders(currentInfo, range),
         redirect: "follow",
         signal: controller.signal,
       });
@@ -263,8 +265,6 @@ function createChunkedBody({
   responses.set(0, Promise.resolve(firstResponse));
   let nextToStart = 1;
   let nextToRead = 0;
-  // A chunk refresh updates the URL/token for the whole video. Share it with
-  // later chunks so they don't each hit another expired URL.
   let sharedInfo = info;
 
   const startChunk = (index: number) => {
@@ -274,8 +274,6 @@ function createChunkedBody({
     const promise = requestUpstream({ videoId, info: sharedInfo, range, method: "GET", signal }).then(
       ({ info: refreshedInfo, response }) => {
         sharedInfo = refreshedInfo;
-        // A 200 here means the upstream ignored Range and is sending the entire
-        // file again. Never concatenate that into the middle of the stream.
         if (response.status !== 206) {
           void response.body?.cancel();
           throw new Error(`YouTube chunk ${range.start}-${range.end} failed with status ${response.status}`);
@@ -283,8 +281,6 @@ function createChunkedBody({
         return response;
       }
     );
-    // Prefetched chunks can reject before their turn; keep that from surfacing
-    // as an unhandled rejection. The error is still observed when we await it.
     promise.catch(() => undefined);
 
     responses.set(index, promise);
@@ -364,9 +360,6 @@ function handlePipedAudio(videoId: string, info: YoutubeStreamInfo, req: Request
   const piped = YOUTUBE_MANAGER.createPipedAudioStream(videoId, info.mimeType);
   req.signal.addEventListener("abort", piped.kill, { once: true });
 
-  // Surface yt-dlp failures as a body error. Returning a 200 whose body simply
-  // ends (the old behavior) left the client fetch hanging until its stall
-  // timeout and then failing to decode an empty payload.
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const reader = piped.stream.getReader();
@@ -399,7 +392,6 @@ function handlePipedAudio(videoId: string, info: YoutubeStreamInfo, req: Request
 async function handleFullAudio(videoId: string, info: YoutubeStreamInfo, req: Request): Promise<Response> {
   const knownTotal = info.contentLength;
 
-  // Unknown length: no way to split safely, stream the single response.
   if (knownTotal <= 0) {
     const upstream = await requestUpstream({ videoId, info, method: req.method, signal: req.signal });
     const headers = baseResponseHeaders(upstream.info);
@@ -439,7 +431,6 @@ async function handleFullAudio(videoId: string, info: YoutubeStreamInfo, req: Re
     return new Response(null, { status: 200, headers });
   }
 
-  // Upstream ignored Range: this response is the complete file.
   if (response.status === 200) {
     copyForwardedHeaders(headers, response);
     return new Response(response.body, { status: 200, headers });
@@ -524,7 +515,6 @@ async function handleRangeAudio(
   headers.set("Content-Range", `bytes ${range.start}-${range.end}/${totalBytes || "*"}`);
   headers.set("Content-Length", String(rangeLength));
 
-  // Upstream ignored Range and returned the whole body — slice out the window.
   if (response.status === 200) {
     return new Response(sliceBody(response.body, range), { status: 206, headers });
   }
@@ -546,18 +536,58 @@ async function handleRangeAudio(
   );
 }
 
+/** Serve a preloaded file from disk, honoring Range and HEAD. */
+function serveCachedFile(cachePath: string, req: Request): Response {
+  const file = Bun.file(cachePath);
+  const totalSize = file.size;
+  const headers = new Headers({
+    ...corsHeaders,
+    "Content-Type": "audio/mp4",
+    "Accept-Ranges": "bytes",
+    "Access-Control-Expose-Headers": "Content-Length, Content-Range, Accept-Ranges, Content-Type, X-Audio-Length",
+    "Cache-Control": "public, max-age=86400",
+    "X-Audio-Length": String(totalSize),
+  });
+
+  const rangeHeader = req.headers.get("range");
+  if (rangeHeader) {
+    const range = parseByteRange(rangeHeader, totalSize);
+    if (!range) return errorResponse("Invalid Range header", 416);
+
+    const length = range.end - range.start + 1;
+    headers.set("Content-Range", `bytes ${range.start}-${range.end}/${totalSize}`);
+    headers.set("Content-Length", String(length));
+
+    if (req.method === "HEAD") return new Response(null, { status: 206, headers });
+    return new Response(file.slice(range.start, range.end + 1), { status: 206, headers });
+  }
+
+  headers.set("Content-Length", String(totalSize));
+  if (req.method === "HEAD") return new Response(null, { status: 200, headers });
+  return new Response(file, { status: 200, headers });
+}
+
 export async function handleYoutubeAudio(videoId: string, req: Request): Promise<Response> {
   if (IS_DEMO_MODE) return errorResponse("Not found", 404);
   if (!VIDEO_ID_PATTERN.test(videoId)) return errorResponse("Invalid YouTube video ID", 400);
   if (req.method !== "GET" && req.method !== "HEAD") return errorResponse("Method not allowed", 405);
 
   try {
+    // 1. Already cached on local disk: serve immediately with native range support.
+    if (YOUTUBE_MANAGER.isCached(videoId)) {
+      return serveCachedFile(YOUTUBE_MANAGER.getCacheFilePath(videoId), req);
+    }
+
     const info = await YOUTUBE_MANAGER.getStreamInfo(videoId);
     if (info.mode === "pipe") return handlePipedAudio(videoId, info, req);
 
     const rangeHeader = req.headers.get("range");
 
-    if (!rangeHeader) return await handleFullAudio(videoId, info, req);
+    // 2. Full track: stream immediately. The client's completion message warms
+    // the disk cache, so the first play never competes with a second download.
+    if (!rangeHeader) {
+      return await handleFullAudio(videoId, info, req);
+    }
 
     const range = parseByteRange(rangeHeader, info.contentLength);
     if (!range) return errorResponse("Invalid Range header", 416);

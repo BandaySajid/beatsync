@@ -386,7 +386,7 @@ export async function uploadFile(filePath: string, roomId: string, fileName: str
   const key = createKey(roomId, fileName);
   const contentType = Bun.file(filePath).type || "audio/mpeg";
 
-  await uploadFileToKey(filePath, key, contentType);
+  await uploadFileToKey(filePath, key, contentType, undefined, "public, max-age=31536000, immutable");
 
   return getPublicAudioUrl(roomId, fileName);
 }
@@ -396,7 +396,8 @@ export async function uploadFileToKey(
   filePath: string,
   key: string,
   contentType = "audio/mp4",
-  metadata?: Record<string, string>
+  metadata?: Record<string, string>,
+  cacheControl?: string
 ): Promise<string> {
   // A replayable body lets the AWS SDK retry transient R2 connection failures.
   const body = new Uint8Array(await Bun.file(filePath).arrayBuffer());
@@ -407,6 +408,7 @@ export async function uploadFileToKey(
       Body: body,
       ContentType: contentType,
       Metadata: metadata,
+      CacheControl: cacheControl,
     })
   );
   return getPublicUrlForKey(key);
@@ -445,6 +447,7 @@ export async function uploadBytes(
     Key: key,
     Body: body,
     ContentType: contentType,
+    CacheControl: "public, max-age=31536000, immutable",
   });
 
   await r2Client.send(command);

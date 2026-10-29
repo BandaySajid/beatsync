@@ -35,15 +35,19 @@ export class BackupManager {
     try {
       const room = globalManager.getOrCreateRoom(roomId);
 
+      // A source that was still downloading when the backup ran cannot be
+      // resumed after a restart, so it is not part of the durable queue.
+      const restorableSources = roomData.audioSources.filter((source) => !source.preparing);
+
       // Concurrently validate all audio sources in R2 (no limit on concurrency).
       // YouTube proxy URLs are resolved on demand, so they only need a shape check.
-      const validationPromises = roomData.audioSources.map((source) =>
+      const validationPromises = restorableSources.map((source) =>
         YoutubeManager.isStreamUrl(source.url) ? Promise.resolve(true) : validateAudioFileExists(source.url)
       );
       const validationResults = await Promise.all(validationPromises);
 
       // Filter out audio sources that are not valid
-      const validAudioSources = roomData.audioSources.filter((_, index) => validationResults[index]);
+      const validAudioSources = restorableSources.filter((_, index) => validationResults[index]);
 
       // Restore audio sources
       room.setAudioSources(validAudioSources);
