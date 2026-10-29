@@ -154,6 +154,7 @@ export type DemoAudioReadyCountType = z.infer<typeof DemoAudioReadyCountSchema>;
 const SuggestionsSchema = z.object({
   type: z.literal(ServerActionEnum.enum.SUGGESTIONS),
   tracks: z.array(TrackSchema),
+  autoQueue: z.boolean(), // Room setting: queue the top suggestion when the last track starts
 });
 
 // Export both broadcast types

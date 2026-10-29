@@ -21,6 +21,7 @@ import { handleSetListeningSource } from "@/websocket/handlers/setListeningSourc
 import { handleStartSpatialAudio } from "@/websocket/handlers/startSpatialAudio";
 import { handleStopSpatialAudio } from "@/websocket/handlers/stopSpatialAudio";
 import { handleReorderAudioSources } from "@/websocket/handlers/handleReorderAudioSources";
+import { handleSetAutoQueue } from "@/websocket/handlers/setAutoQueue";
 import { handleSetMetronome } from "@/websocket/handlers/setMetronome";
 import { handleSetLowPassFreq } from "@/websocket/handlers/setLowPassFreq";
 import { handleSync } from "@/websocket/handlers/sync";
@@ -142,5 +143,9 @@ export const WS_REGISTRY: WebsocketRegistry = {
   [ClientActionEnum.enum.ADD_YOUTUBE_URL]: {
     handle: handleAddYoutubeUrl,
     description: "Extract and add a YouTube or YouTube Music URL to the room queue",
+  },
+  [ClientActionEnum.enum.SET_AUTO_QUEUE]: {
+    handle: handleSetAutoQueue,
+    description: "Turn auto-queueing of similar songs on/off for the room",
   },
 };

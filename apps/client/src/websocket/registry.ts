@@ -187,8 +187,8 @@ export const WS_RESPONSE_REGISTRY: WebsocketResponseRegistry = {
 
   [ServerActionEnum.enum.SUGGESTIONS]: {
     handle: ({ response }) => {
-      useGlobalStore.setState({ suggestions: response.tracks });
+      useGlobalStore.setState({ suggestions: response.tracks, autoQueue: response.autoQueue });
     },
-    description: "Songs similar to the last YouTube track added",
+    description: "Songs similar to the last YouTube track added, and the room's auto-queue setting",
   },
 };

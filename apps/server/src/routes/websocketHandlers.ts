@@ -1,4 +1,5 @@
 import { IS_DEMO_MODE } from "@/demo";
+import { suggestionsMessage } from "@/lib/suggestions";
 import { globalManager } from "@/managers";
 import { sendBroadcast, sendToClient, sendUnicast } from "@/utils/responses";
 import type { BunServer, WSData } from "@/utils/websocket";
@@ -158,6 +159,8 @@ export const handleOpen = (ws: ServerWebSocket<WSData>, server: BunServer) => {
       message: { type: "DEMO_AUDIO_READY_COUNT", count: room.getDemoAudioReadyCount() },
     });
   } else {
+    // Suggestions are only broadcast when they change, so a late joiner needs the current set.
+    sendToClient({ ws, message: suggestionsMessage(room) });
     // Unicast full client list to the joining client immediately
     sendToClient({ ws, message: createClientUpdate(roomId) });
     // Broadcast to others: debounced

@@ -1,7 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { useGlobalStore } from "@/store/global";
+import { useCanMutate, useGlobalStore } from "@/store/global";
 import { sendWSRequest } from "@/utils/ws";
 import { ClientActionEnum, type TrackType } from "@beatsync/shared";
 import { Plus } from "lucide-react";
@@ -9,9 +9,16 @@ import { toast } from "sonner";
 
 export const SimilarSongs = ({ className }: { className?: string }) => {
   const suggestions = useGlobalStore((state) => state.suggestions);
+  const autoQueue = useGlobalStore((state) => state.autoQueue);
   const socket = useGlobalStore((state) => state.socket);
+  const canMutate = useCanMutate();
 
   if (suggestions.length === 0) return null;
+
+  const toggleAutoQueue = () => {
+    if (!socket) return;
+    sendWSRequest({ ws: socket, request: { type: ClientActionEnum.enum.SET_AUTO_QUEUE, enabled: !autoQueue } });
+  };
 
   const addTrack = (track: TrackType) => {
     if (!socket) {
@@ -30,7 +37,23 @@ export const SimilarSongs = ({ className }: { className?: string }) => {
 
   return (
     <div className={cn("", className)}>
-      <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500 px-3 mb-2">Similar songs</h3>
+      <div className="flex items-center justify-between px-3 mb-2">
+        <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500">Similar songs</h3>
+        <button
+          type="button"
+          onClick={toggleAutoQueue}
+          disabled={!canMutate}
+          aria-pressed={autoQueue}
+          title={canMutate ? "Add a similar song when the queue runs out" : "Only admins can change this in this room"}
+          className={cn(
+            "text-[10px] font-mono px-2 py-0.5 rounded transition-colors",
+            autoQueue ? "bg-white text-black" : "text-neutral-500 bg-neutral-800",
+            canMutate ? "cursor-pointer hover:opacity-80" : "cursor-not-allowed opacity-50"
+          )}
+        >
+          auto-play {autoQueue ? "on" : "off"}
+        </button>
+      </div>
       <div className="space-y-1">
         {suggestions.map((track) => (
           <button

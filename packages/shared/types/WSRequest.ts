@@ -38,6 +38,7 @@ export const ClientActionEnum = z.enum([
   "SET_LOW_PASS_FREQ", // Set low-pass filter cutoff frequency
   "LIVENESS_PONG", // Liveness reply to a server LIVENESS_PING
   "ADD_YOUTUBE_URL", // Add a YouTube / YouTube Music URL to the room queue
+  "SET_AUTO_QUEUE", // Turn auto-queueing of similar songs on/off for the room
 ]);
 
 export const NTPRequestPacketSchema = z.object({
@@ -183,6 +184,11 @@ export const AddYoutubeUrlSchema = z.object({
 });
 export type AddYoutubeUrlType = z.infer<typeof AddYoutubeUrlSchema>;
 
+export const SetAutoQueueSchema = z.object({
+  type: z.literal(ClientActionEnum.enum.SET_AUTO_QUEUE),
+  enabled: z.boolean(),
+});
+
 export const WSRequestSchema = z.discriminatedUnion("type", [
   PlayActionSchema,
   PauseActionSchema,
@@ -209,6 +215,7 @@ export const WSRequestSchema = z.discriminatedUnion("type", [
   SetLowPassFreqSchema,
   LivenessPongSchema,
   AddYoutubeUrlSchema,
+  SetAutoQueueSchema,
 ]);
 export type WSRequestType = z.infer<typeof WSRequestSchema>;
 export type PlayActionType = z.infer<typeof PlayActionSchema>;

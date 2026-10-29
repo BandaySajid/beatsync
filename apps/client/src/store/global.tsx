@@ -152,6 +152,8 @@ interface GlobalStateValues {
 
   // Songs similar to the last YouTube track added (server-broadcast)
   suggestions: TrackType[];
+  // Room setting: server queues the top suggestion when the last track starts
+  autoQueue: boolean;
 
   // Stream job tracking
   activeStreamJobs: number;
@@ -376,6 +378,7 @@ const initialState: GlobalStateValues = {
   hasMoreResults: false,
 
   suggestions: [],
+  autoQueue: true,
 
   // Stream job tracking
   activeStreamJobs: 0,
