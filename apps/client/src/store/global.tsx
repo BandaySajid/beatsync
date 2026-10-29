@@ -1764,9 +1764,15 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       // still in the playlist), but always take the latest source object so a
       // preparing -> ready transition is visible to the queue UI.
       const existingByUrl = new Map(state.audioSources.map((as) => [as.source.url, as]));
+      // A placeholder -> R2 swap is the same audio: keep a fully decoded buffer instead of
+      // downloading it again. (An in-flight load is keyed by the old URL, so it restarts.)
+      const swappedFrom = new Map(replacedSources?.map((swap) => [swap.to, swap.from]));
+      const carriedUrls: string[] = [];
       const newAudioSources: AudioSourceState[] = sources.map((source) => {
-        const existing = existingByUrl.get(source.url);
+        const swapped = existingByUrl.get(swappedFrom.get(source.url) ?? "");
+        const existing = existingByUrl.get(source.url) ?? (swapped?.status === "loaded" ? swapped : undefined);
         if (existing) {
+          if (existing === swapped) carriedUrls.push(source.url);
           return { ...existing, source };
         }
         return {
@@ -1792,7 +1798,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
       set({
         audioSources: newAudioSources,
-        bufferAccessQueue: newQueue,
+        bufferAccessQueue: [...carriedUrls, ...newQueue],
         selectedAudioUrl: preferredUrl ?? "",
       });
 

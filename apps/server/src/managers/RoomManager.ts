@@ -520,6 +520,10 @@ export class RoomManager {
     if (this.playbackState.audioSource === oldUrl) {
       this.playbackState = { ...this.playbackState, audioSource: source.url };
     }
+    // Clients report loads under the new URL after a swap; don't wait on the old one.
+    if (this.pendingPlay?.playAction.audioSource === oldUrl) {
+      this.pendingPlay.playAction = { ...this.pendingPlay.playAction, audioSource: source.url };
+    }
     return this.audioSources;
   }
 

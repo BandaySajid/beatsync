@@ -263,6 +263,23 @@ describe("preparing sources and source replacement", () => {
     expect(room.getPlaybackState().trackPositionSeconds).toBe(12);
   });
 
+  it("starts a pending play when clients report the swapped URL", () => {
+    const R2_URL = "https://cdn.example.com/ready.m4a";
+    const { room } = createRoomWithClients(1);
+    room.addAudioSource({ url: PREPARING_URL });
+    const server = {} as BunServer;
+    room.initiateAudioSourceLoad({ type: "PLAY", audioSource: PREPARING_URL, trackTimeSeconds: 0 }, "client-1", server);
+
+    room.replaceAudioSource(PREPARING_URL, { url: R2_URL });
+    broadcastMessages = [];
+    room.processClientLoadedAudioSource("client-1", server, R2_URL);
+
+    const play = broadcastMessages.find((m) => m.message.type === "SCHEDULED_ACTION")?.message;
+    expect(
+      play?.type === "SCHEDULED_ACTION" && play.scheduledAction.type === "PLAY" && play.scheduledAction.audioSource
+    ).toBe(R2_URL);
+  });
+
   it("omits preparing sources from backups", () => {
     const room = new RoomManager(ROOM_ID);
     room.addAudioSource({ url: AUDIO_URL });
