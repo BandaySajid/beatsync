@@ -2,6 +2,7 @@
 // playback state scheduling, syncClient late-join math, and audio source reordering.
 
 import type { WSBroadcastType, WSUnicastType } from "@beatsync/shared";
+import { epochNow } from "@beatsync/shared";
 import type { ServerWebSocket } from "bun";
 import { beforeEach, describe, expect, it, mock } from "bun:test";
 import { mockR2 } from "@/__tests__/mocks/r2";
@@ -280,7 +281,8 @@ describe("restorePlaybackState", () => {
       Date.now() - 300_000
     );
 
-    const beforeRestore = Date.now();
+    // Same clock as restorePlaybackState; Date.now() drifts from it by a few ms.
+    const beforeRestore = epochNow();
     room.restorePlaybackState(room.getPlaybackState());
     const restored = room.getPlaybackState();
 
