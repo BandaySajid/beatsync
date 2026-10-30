@@ -55,6 +55,9 @@ export class BackupManager {
       // Restore client data
       room.restoreClientData(roomData.clientDatas);
 
+      // A restart must not leak a solo session into /discover.
+      if (roomData.isPrivate) room.setPrivate();
+
       // Restore playback state - but validate it first
       const playbackStateIsValidTrack = validAudioSources.some(
         (source) => source.url === roomData.playbackState.audioSource

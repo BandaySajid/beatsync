@@ -7,7 +7,7 @@ import { generateName } from "@/lib/randomNames";
 import { validateFullRoomId, validatePartialRoomId } from "@/lib/room";
 import { useRoomStore } from "@/store/room";
 import { useQuery } from "@tanstack/react-query";
-import { PlusCircle } from "lucide-react";
+import { Headphones, PlusCircle } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -68,13 +68,18 @@ export const Join = () => {
     router.push(`/room/${data.roomId}`);
   };
 
+  // Generate a random 6-digit room ID
+  const generateRoomId = () => Math.floor(100000 + Math.random() * 900000).toString();
+
   const handleCreateRoom = () => {
     setIsCreating(true);
+    router.push(`/room/${generateRoomId()}`);
+  };
 
-    // Generate a random 6-digit room ID
-    const newRoomId = Math.floor(100000 + Math.random() * 900000).toString();
-
-    router.push(`/room/${newRoomId}`);
+  // A solo session is a private room with a personal layout; friends can still be invited.
+  const handleListenSolo = () => {
+    setIsCreating(true);
+    router.push(`/room/${generateRoomId()}?solo=1`);
   };
 
   const handleRegenerateName = () => {
@@ -259,6 +264,23 @@ export const Join = () => {
                   <PlusCircle size={16} className="mr-2" />
                 )}
                 <span>{isCreating ? "Creating..." : "Create new room"}</span>
+              </motion.button>
+
+              <motion.button
+                type="button"
+                className="px-5 py-2 rounded-full font-medium text-sm tracking-wide cursor-pointer w-full hover:shadow-md hover:shadow-zinc-600/40 transition-shadow duration-500 flex items-center justify-center bg-neutral-800 text-white"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                whileHover={{
+                  scale: 1.015,
+                }}
+                whileTap={{ scale: 0.985 }}
+                transition={{ duration: 0.3 }}
+                onClick={handleListenSolo}
+                disabled={isJoining || isCreating}
+              >
+                <Headphones size={16} className="mr-2" />
+                <span>Listen solo</span>
               </motion.button>
 
               {/* <motion.button

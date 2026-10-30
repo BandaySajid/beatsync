@@ -6,11 +6,13 @@ interface RoomStateValues {
   roomId: string;
   username: string;
   isLoadingRoom: boolean;
+  isSolo: boolean; // Started via "Listen solo" (?solo=1): private room with a personal layout
 }
 
 interface RoomState extends RoomStateValues {
   setRoomId: (roomId: string) => void;
   setUsername: (username: string) => void;
+  setIsSolo: (isSolo: boolean) => void;
   setIsLoading: (isLoading: boolean) => void;
   reset: () => void;
 }
@@ -20,6 +22,7 @@ const initialState: RoomStateValues = {
   roomId: "",
   username: "",
   isLoadingRoom: false,
+  isSolo: false,
 };
 
 export const useRoomStore = create<RoomState>()((set) => ({
@@ -29,6 +32,7 @@ export const useRoomStore = create<RoomState>()((set) => ({
   // Actions
   setRoomId: (roomId) => set({ roomId }),
   setUsername: (username) => set({ username }),
+  setIsSolo: (isSolo) => set({ isSolo }),
   setIsLoading: (isLoading) => set({ isLoadingRoom: isLoading }),
 
   // Reset to initial state

@@ -55,6 +55,7 @@ export const handleWebSocketUpgrade = (req: Request, server: BunServer) => {
     clientSecret,
     isAdmin,
     isCreator,
+    privateRoom: url.searchParams.get("private") === "1",
   };
 
   // Upgrade the connection with the WSData context
