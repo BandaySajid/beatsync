@@ -1,18 +1,9 @@
+import { splitTrackName, youtubeIdFromUrl, youtubeThumbnail } from "@/lib/libraryTrack";
 import { extractFileNameFromUrl } from "@/lib/utils";
 import { useCanMutate, useGlobalStore } from "@/store/global";
 import { useEffect } from "react";
 
-// Matches /stream/youtube/<id>/... and the R2 key youtube/<id>/...
-const YOUTUBE_ID_IN_URL = /youtube\/([A-Za-z0-9_-]{11})\//;
 const SEEK_STEP_SECONDS = 10;
-
-/** Search results are named "Artist - Title"; anything else is just a title. */
-const splitTrackName = (name: string) => {
-  const separator = name.indexOf(" - ");
-  return separator > 0
-    ? { artist: name.slice(0, separator), title: name.slice(separator + 3) }
-    : { artist: "Beatsync", title: name };
-};
 
 /**
  * Lock screen, notification and headphone-button controls (Media Session API).
@@ -33,14 +24,12 @@ export const useMediaSession = () => {
       return;
     }
     const { artist, title } = splitTrackName(extractFileNameFromUrl(selectedAudioUrl));
-    const videoId = YOUTUBE_ID_IN_URL.exec(selectedAudioUrl)?.[1];
+    const videoId = youtubeIdFromUrl(selectedAudioUrl);
     navigator.mediaSession.metadata = new MediaMetadata({
       title,
       artist,
       album: "Beatsync",
-      artwork: videoId
-        ? [{ src: `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`, sizes: "480x360", type: "image/jpeg" }]
-        : [],
+      artwork: videoId ? [{ src: youtubeThumbnail(videoId), sizes: "480x360", type: "image/jpeg" }] : [],
     });
   }, [selectedAudioUrl]);
 

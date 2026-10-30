@@ -89,7 +89,7 @@ export const Dashboard = ({ roomId }: DashboardProps) => {
                     value="solo"
                     className="flex-1 data-[state=active]:bg-white/5 data-[state=active]:shadow-none rounded-none text-xs h-full gap-1 text-neutral-400 data-[state=active]:text-white transition-all duration-200"
                   >
-                    <Headphones size={16} /> Add & invite
+                    <Headphones size={16} /> Library
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="music" className="flex-1 overflow-y-auto mt-0 min-h-0">

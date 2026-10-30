@@ -7,6 +7,7 @@ import { AudioUploaderMinimal } from "../AudioUploaderMinimal";
 import { Separator } from "../ui/separator";
 import { RoomQRCode } from "./CopyRoom";
 import { GlobalVolumeControl } from "./GlobalVolumeControl";
+import { LibraryPanel } from "./LibraryPanel";
 import { YoutubeUrlInput } from "./YoutubeUrlInput";
 
 /** Side panel for a solo session: inviting friends and adding your own music. */
@@ -40,6 +41,9 @@ export const SoloPanel = ({ className }: { className?: string }) => {
         <AudioUploaderMinimal />
         <YoutubeUrlInput />
       </div>
+
+      <Separator className="bg-neutral-800/50 mt-2" />
+      <LibraryPanel />
     </motion.div>
   );
 };
