@@ -1,7 +1,10 @@
 import {
   DiscoverRoomsType,
   GetActiveRoomsType,
+  GetBrowsePlaylistResponseType,
   GetDefaultAudioType,
+  GetMoodPlaylistsResponseType,
+  GetMoodsResponseType,
   GetUploadUrlType,
   UploadCompleteResponseType,
   UploadCompleteType,
@@ -109,3 +112,18 @@ export async function fetchDiscoverRooms() {
   const data: DiscoverRoomsType = await response.json();
   return data;
 }
+
+/** GET a YouTube Music browse page from the server; throws so React Query shows the error state. */
+async function fetchBrowse<T>(path: string): Promise<T> {
+  const response = await fetch(`${getApiUrl()}${path}`);
+  if (!response.ok) throw new Error((await response.text()) || `Request failed (${response.status})`);
+  return (await response.json()) as T;
+}
+
+export const fetchMoods = () => fetchBrowse<GetMoodsResponseType>("/browse/moods");
+
+export const fetchMoodPlaylists = (params: string) =>
+  fetchBrowse<GetMoodPlaylistsResponseType>(`/browse/mood?params=${encodeURIComponent(params)}`);
+
+export const fetchBrowsePlaylist = (id: string) =>
+  fetchBrowse<GetBrowsePlaylistResponseType>(`/browse/playlist?id=${encodeURIComponent(id)}`);

@@ -1,6 +1,7 @@
 import { ADMIN_SECRET, IS_DEMO_MODE } from "@/demo";
 import { BackupManager } from "@/managers/BackupManager";
 import { getActiveRooms } from "@/routes/active";
+import { handleBrowse } from "@/routes/browse";
 import { handleGetDefaultAudio } from "@/routes/default";
 import { handleServeAudio } from "@/routes/demoAudio";
 import { handleDiscover } from "@/routes/discover";
@@ -37,6 +38,8 @@ const server = Bun.serve<WSData>({
         response = handleServeAudio(url.pathname);
       } else if (youtubeStreamMatch) {
         response = await handleYoutubeAudio(youtubeStreamMatch[1], req);
+      } else if (url.pathname.startsWith("/browse/")) {
+        response = await handleBrowse(url);
       } else {
         switch (url.pathname) {
           case "/":

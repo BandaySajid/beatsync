@@ -30,7 +30,7 @@ const ADD_ALL_LIMIT = 20;
 const RECENT_SHOWN = 8;
 
 /** Add songs to the queue in order (or shuffled), skipping ones already queued. */
-const addTracksToQueue = (tracks: LibraryTrack[], { shuffle = false } = {}) => {
+export const addTracksToQueue = (tracks: LibraryTrack[], { shuffle = false } = {}) => {
   const candidates = tracks.filter((track) => !isTrackQueued(track));
   if (shuffle) {
     // Fisher-Yates: an unbiased shuffle
@@ -48,7 +48,15 @@ const addTracksToQueue = (tracks: LibraryTrack[], { shuffle = false } = {}) => {
   toast.success(`Added ${toAdd.length} song${toAdd.length === 1 ? "" : "s"} to the queue`);
 };
 
-const SmallButton = ({ onClick, children, label }: { onClick: () => void; children: ReactNode; label?: string }) => (
+export const SmallButton = ({
+  onClick,
+  children,
+  label,
+}: {
+  onClick: () => void;
+  children: ReactNode;
+  label?: string;
+}) => (
   <button
     type="button"
     aria-label={label}
@@ -59,7 +67,7 @@ const SmallButton = ({ onClick, children, label }: { onClick: () => void; childr
   </button>
 );
 
-const LibraryRow = ({ track, actions }: { track: LibraryTrack; actions?: ReactNode }) => {
+export const LibraryRow = ({ track, actions }: { track: LibraryTrack; actions?: ReactNode }) => {
   const queued = isTrackQueued(track);
   return (
     <div className="flex items-center gap-1 pr-1 rounded-md hover:bg-neutral-800 transition-colors">
@@ -234,7 +242,7 @@ const ImportPlaylistForm = ({ onDone }: { onDone: () => void }) => {
   );
 };
 
-const SectionHeader = ({ icon, title, action }: { icon: ReactNode; title: string; action?: ReactNode }) => (
+export const SectionHeader = ({ icon, title, action }: { icon: ReactNode; title: string; action?: ReactNode }) => (
   <div className="flex items-center justify-between mb-2">
     <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500 flex items-center gap-1.5">
       {icon}
