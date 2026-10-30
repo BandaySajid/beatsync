@@ -2,6 +2,7 @@ import { trackFromSearchResult } from "@/lib/libraryTrack";
 import { useChatStore } from "@/store/chat";
 import { useGlobalStore } from "@/store/global";
 import { useLibraryStore } from "@/store/library";
+import { useRoomStore } from "@/store/room";
 import { toast } from "sonner";
 import { getProbeStats, handleNTPResponse } from "@/utils/ntp";
 import { sendWSRequest } from "@/utils/ws";
@@ -193,6 +194,13 @@ export const WS_RESPONSE_REGISTRY: WebsocketResponseRegistry = {
       useGlobalStore.setState({ suggestions: response.tracks, autoQueue: response.autoQueue });
     },
     description: "Songs similar to the last YouTube track added, and the room's auto-queue setting",
+  },
+
+  [ServerActionEnum.enum.ROOM_INVITE]: {
+    handle: ({ response }) => {
+      useRoomStore.setState({ inviteToken: response.inviteToken });
+    },
+    description: "Invite token for a private room, used in the invite link",
   },
 
   [ServerActionEnum.enum.PLAYLIST_IMPORT_RESPONSE]: {

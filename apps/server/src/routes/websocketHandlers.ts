@@ -5,7 +5,7 @@ import { sendBroadcast, sendToClient, sendUnicast } from "@/utils/responses";
 import type { BunServer, WSData } from "@/utils/websocket";
 import { dispatchMessage } from "@/websocket/dispatch";
 import type { WSBroadcastType } from "@beatsync/shared";
-import { epochNow, WSRequestSchema } from "@beatsync/shared";
+import { epochNow, PRIVATE_ROOM_CLOSE_CODE, WSRequestSchema } from "@beatsync/shared";
 import type { ServerWebSocket } from "bun";
 
 const createClientUpdate = (roomId: string) => {
@@ -44,6 +44,14 @@ export const handleOpen = (ws: ServerWebSocket<WSData>, server: BunServer) => {
   console.log(`WebSocket connection opened for user ${ws.data.username} in room ${ws.data.roomId}`);
 
   const { roomId } = ws.data;
+
+  // Private room without an invite: tell the client why, without joining it to anything.
+  if (ws.data.denied) {
+    console.log(`Denied ${ws.data.username} in private room ${roomId}: no invite`);
+    ws.close(PRIVATE_ROOM_CLOSE_CODE, "This is a private session");
+    return;
+  }
+
   ws.subscribe(roomId);
 
   const isNewRoom = !globalManager.getRoom(roomId);
@@ -164,6 +172,9 @@ export const handleOpen = (ws: ServerWebSocket<WSData>, server: BunServer) => {
   } else {
     // Suggestions are only broadcast when they change, so a late joiner needs the current set.
     sendToClient({ ws, message: suggestionsMessage(room) });
+    // Members of a private room get its invite token so they can share an invite link.
+    const inviteToken = room.getInviteToken();
+    if (inviteToken) sendUnicast({ ws, message: { type: "ROOM_INVITE", inviteToken } });
     // Unicast full client list to the joining client immediately
     sendToClient({ ws, message: createClientUpdate(roomId) });
     // Broadcast to others: debounced
@@ -174,6 +185,7 @@ export const handleOpen = (ws: ServerWebSocket<WSData>, server: BunServer) => {
 export const handleMessage = async (ws: ServerWebSocket<WSData>, message: string | Buffer, server: BunServer) => {
   const t1 = epochNow(); // Always capture immediately on receive
   const { roomId, username } = ws.data;
+  if (ws.data.denied) return; // closing; never joined the room
 
   try {
     const parsedData: unknown = JSON.parse(message.toString());
@@ -231,6 +243,7 @@ export const handleMessage = async (ws: ServerWebSocket<WSData>, message: string
 };
 
 export const handleClose = (ws: ServerWebSocket<WSData>, server: BunServer) => {
+  if (ws.data.denied) return; // never joined the room
   try {
     console.log(`WebSocket connection closed for user ${ws.data.username} in room ${ws.data.roomId}`);
 

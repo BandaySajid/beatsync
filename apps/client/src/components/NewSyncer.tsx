@@ -5,7 +5,9 @@ import { useListeningHistory } from "@/hooks/useListeningHistory";
 import { useMediaSession } from "@/hooks/useMediaSession";
 import { useGlobalStore } from "@/store/global";
 import { useRoomStore } from "@/store/room";
+import { Lock } from "lucide-react";
 import { motion } from "motion/react";
+import Link from "next/link";
 import { useEffect, useLayoutEffect } from "react";
 import { IS_DEMO_MODE } from "@/lib/demo";
 import { Dashboard } from "./dashboard/Dashboard";
@@ -23,6 +25,7 @@ export const NewSyncer = ({ roomId }: NewSyncerProps) => {
   const setRoomId = useRoomStore((state) => state.setRoomId);
   const setIsSolo = useRoomStore((state) => state.setIsSolo);
   const username = useRoomStore((state) => state.username);
+  const accessDenied = useRoomStore((state) => state.accessDenied);
   const hydratePersistedState = useGlobalStore((state) => state.hydratePersistedState);
 
   // Restore the same tab's Start System/NTP state before the WebSocket effect
@@ -63,6 +66,23 @@ export const NewSyncer = ({ roomId }: NewSyncerProps) => {
       // Best-effort only.
     }
   }, [username]);
+
+  if (accessDenied) {
+    return (
+      <div className="w-full h-dvh flex items-center justify-center bg-neutral-950 text-white px-6">
+        <div className="max-w-sm text-center space-y-3">
+          <Lock className="size-6 mx-auto text-neutral-400" />
+          <h1 className="text-base font-medium">This is a private session</h1>
+          <p className="text-sm text-neutral-400">
+            Only people with an invite link can join. Ask the person listening for their invite link (QR button).
+          </p>
+          <Link href="/" className="inline-block text-sm text-white underline underline-offset-4">
+            Go to Beatsync home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.5 }}>
