@@ -8,7 +8,7 @@ const MAX_ARTIST_NAME_LENGTH = 100;
 
 /**
  * YouTube Music browsing: GET /browse/moods, /browse/mood?params=, /browse/playlist?id=,
- * /browse/artist?id= (or ?name=), /browse/album?id=
+ * /browse/artist?id= (or ?name=), /browse/album?id=, /browse/radio?videoId=
  */
 export async function handleBrowse(url: URL): Promise<Response> {
   if (IS_DEMO_MODE) return errorResponse("Browsing is disabled in demo mode", 403);
@@ -43,6 +43,12 @@ export async function handleBrowse(url: URL): Promise<Response> {
         const id = url.searchParams.get("id") ?? "";
         if (!YoutubeManager.isAlbumId(id)) return errorResponse("Invalid album ID");
         return jsonResponse(await YOUTUBE_MANAGER.getAlbum(id));
+      }
+
+      case "/browse/radio": {
+        const videoId = url.searchParams.get("videoId") ?? "";
+        if (!YoutubeManager.isVideoId(videoId)) return errorResponse("Invalid video ID");
+        return jsonResponse({ tracks: await YOUTUBE_MANAGER.getRadio(videoId) });
       }
 
       default:

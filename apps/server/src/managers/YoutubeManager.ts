@@ -134,6 +134,7 @@ const RANGE_LIMIT_STATUSES = new Set([403, 410, 416]);
 const MAX_TITLE_LENGTH = 120;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const MAX_SUGGESTIONS = 10;
+const MAX_RADIO_TRACKS = 50;
 const PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,64}$/;
 const ARTIST_ID_PATTERN = /^UC[A-Za-z0-9_-]{22}$/;
 const ALBUM_ID_PATTERN = /^MPREb_[A-Za-z0-9_-]{6,40}$/;
@@ -476,6 +477,10 @@ export class YoutubeManager {
 
   static isArtistId(id: string): boolean {
     return ARTIST_ID_PATTERN.test(id);
+  }
+
+  static isVideoId(id: string): boolean {
+    return VIDEO_ID_PATTERN.test(id);
   }
 
   static isAlbumId(id: string): boolean {
@@ -1167,10 +1172,6 @@ export class YoutubeManager {
     return tracks;
   }
 
-  /**
-   * YouTube Music's radio for a video: more from the same artist plus songs with a similar
-   * mood and genre (a ghazal leads to more ghazals). Excludes the seed video itself.
-   */
   /** A playlist's name and (up to MAX_PLAYLIST_TRACKS) songs, following continuation pages. */
   async getPlaylist(playlistId: string): Promise<{ name: string; tracks: TrackType[] }> {
     // YouTube Mixes are generated per viewer and can't be fetched as a playlist.
@@ -1361,6 +1362,21 @@ export class YoutubeManager {
   }
 
   async getSuggestions(videoId: string): Promise<TrackType[]> {
+    return (await this.getUpNext(videoId)).slice(0, MAX_SUGGESTIONS);
+  }
+
+  /** A longer YouTube Music radio for a song, for radios and daily mixes (cached). */
+  getRadio(videoId: string): Promise<TrackType[]> {
+    return this.cachedBrowse(`radio:${videoId}`, async () =>
+      (await this.getUpNext(videoId)).slice(0, MAX_RADIO_TRACKS)
+    );
+  }
+
+  /**
+   * YouTube Music's radio for a video: more from the same artist plus songs with a similar
+   * mood and genre (a ghazal leads to more ghazals). Excludes the seed video itself.
+   */
+  private async getUpNext(videoId: string): Promise<TrackType[]> {
     const yt = await this.getInnertube();
     const panel = await yt.music.getUpNext(videoId, true);
     const tracks: TrackType[] = [];
@@ -1379,7 +1395,7 @@ export class YoutubeManager {
       tracks.push(toYoutubeTrack(id, title, author, typeof seconds === "number" ? seconds : 0));
     }
 
-    return tracks.slice(0, MAX_SUGGESTIONS);
+    return tracks;
   }
 }
 
