@@ -19,6 +19,8 @@ export const RoomQRCode = () => {
     if (typeof window === "undefined") return "";
     const url = new URL(window.location.href);
     url.searchParams.delete("admin");
+    // Invited friends join the room as normal members, not as another solo session.
+    url.searchParams.delete("solo");
     return url.toString();
   })();
 

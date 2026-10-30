@@ -57,6 +57,7 @@ const RoomBackupSchema = z.object({
     .max(LOW_PASS_CONSTANTS.MAX_FREQ)
     .default(LOW_PASS_CONSTANTS.MAX_FREQ),
   playbackState: RoomPlaybackStateSchema,
+  isPrivate: z.boolean().default(false),
   chat: z
     .object({
       messages: z.array(ChatMessageSchema),
@@ -131,6 +132,8 @@ export class RoomManager {
   private globalVolume = 1.0;
   private lowPassFreq: number = LOW_PASS_CONSTANTS.MAX_FREQ; // Default bypassed (full spectrum)
   private isMetronomeEnabled = false;
+  // Private rooms (solo sessions) are joinable by code/link but never listed in /discover.
+  private isPrivate = false;
   // Map of trackId to job status
   private activeStreamJobs = new Map<string, { status: string }>();
   private chatManager: ChatManager;
@@ -1074,6 +1077,14 @@ export class RoomManager {
     return this.clientData.get(clientId);
   }
 
+  setPrivate(): void {
+    this.isPrivate = true;
+  }
+
+  getIsPrivate(): boolean {
+    return this.isPrivate;
+  }
+
   /**
    * Get the backup state for this room
    */
@@ -1086,6 +1097,7 @@ export class RoomManager {
       globalVolume: this.globalVolume,
       lowPassFreq: this.lowPassFreq,
       playbackState: this.playbackState,
+      isPrivate: this.isPrivate,
       chat: {
         messages: this.chatManager.getFullHistory(),
         nextMessageId: this.chatManager.getNextMessageId(),

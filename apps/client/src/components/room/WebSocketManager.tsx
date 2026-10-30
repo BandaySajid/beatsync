@@ -56,6 +56,8 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
   const creatorSecret = searchParams?.get("creator") ?? (isClient ? localStorage.getItem("creatorSecret") : null);
   const adminParam = adminSecret ? `&admin=${encodeURIComponent(adminSecret)}` : "";
   const creatorParam = creatorSecret ? `&creator=${encodeURIComponent(creatorSecret)}` : "";
+  // Solo sessions ask the server to keep the room out of the public room list.
+  const privateParam = searchParams?.get("solo") === "1" ? "&private=1" : "";
 
   const createConnection = () => {
     // Never tear down a healthy connection. The effect, bfcache handler and
@@ -66,7 +68,7 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
       return previous;
     }
 
-    const SOCKET_URL = `${getWsUrl()}?roomId=${roomId}&username=${username}&clientId=${clientId}&clientSecret=${getClientSecret()}${adminParam}${creatorParam}`;
+    const SOCKET_URL = `${getWsUrl()}?roomId=${roomId}&username=${username}&clientId=${clientId}&clientSecret=${getClientSecret()}${adminParam}${creatorParam}${privateParam}`;
     console.log("Creating new WS connection to", SOCKET_URL.replace(/clientSecret=[^&]*/, "clientSecret=***"));
 
     // Clear previous connection if it exists

@@ -19,6 +19,7 @@ interface NewSyncerProps {
 export const NewSyncer = ({ roomId }: NewSyncerProps) => {
   const setUsername = useRoomStore((state) => state.setUsername);
   const setRoomId = useRoomStore((state) => state.setRoomId);
+  const setIsSolo = useRoomStore((state) => state.setIsSolo);
   const username = useRoomStore((state) => state.username);
   const hydratePersistedState = useGlobalStore((state) => state.hydratePersistedState);
 
@@ -36,6 +37,7 @@ export const NewSyncer = ({ roomId }: NewSyncerProps) => {
   // the server restores the same room member either way.
   useEffect(() => {
     setRoomId(roomId);
+    setIsSolo(new URLSearchParams(window.location.search).get("solo") === "1");
     if (!username) {
       let storedName: string | null = null;
       try {
@@ -45,7 +47,7 @@ export const NewSyncer = ({ roomId }: NewSyncerProps) => {
       }
       setUsername(storedName || generateName());
     }
-  }, [setUsername, username, roomId, setRoomId]);
+  }, [setUsername, username, roomId, setRoomId, setIsSolo]);
 
   useEffect(() => {
     if (!username) return;

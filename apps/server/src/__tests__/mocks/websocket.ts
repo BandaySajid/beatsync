@@ -7,6 +7,7 @@ export function createMockWs(data: {
   clientSecret?: string;
   username?: string;
   roomId?: string;
+  privateRoom?: boolean;
 }): ServerWebSocket<WSData> {
   return {
     data: {
@@ -14,6 +15,7 @@ export function createMockWs(data: {
       clientSecret: data.clientSecret ?? `secret-${data.clientId}`,
       username: data.username ?? `user-${data.clientId}`,
       roomId: data.roomId ?? "test-room",
+      privateRoom: data.privateRoom ?? false,
     },
     subscribe: mock(() => {
       /* noop */

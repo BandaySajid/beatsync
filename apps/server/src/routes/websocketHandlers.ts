@@ -46,7 +46,10 @@ export const handleOpen = (ws: ServerWebSocket<WSData>, server: BunServer) => {
   const { roomId } = ws.data;
   ws.subscribe(roomId);
 
+  const isNewRoom = !globalManager.getRoom(roomId);
   const room = globalManager.getOrCreateRoom(roomId);
+  // Only the connection that creates a room decides whether it is private.
+  if (isNewRoom && ws.data.privateRoom) room.setPrivate();
   room.addClient(ws);
 
   const { audioSources, globalVolume, lowPassFreq } = room.getState();

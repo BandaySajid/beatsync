@@ -141,6 +141,9 @@ export class GlobalManager {
   getActiveRooms(): DiscoverRoomsType {
     const activeRooms = Array.from(this.rooms.values())
       .filter((room) => {
+        // Solo sessions are private
+        if (room.getIsPrivate()) return false;
+
         // Room must have active connections
         if (!room.hasActiveConnections()) return false;
 
