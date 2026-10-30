@@ -1,7 +1,12 @@
 import fs from "fs";
 import path from "path";
-import { ClientType, Innertube } from "youtubei.js";
-import { R2_AUDIO_FILE_NAME_DELIMITER, type TrackType } from "@beatsync/shared";
+import { ClientType, Innertube, YTNodes } from "youtubei.js";
+import {
+  R2_AUDIO_FILE_NAME_DELIMITER,
+  type GetMoodPlaylistsResponseType,
+  type GetMoodsResponseType,
+  type TrackType,
+} from "@beatsync/shared";
 
 interface YtDlpJsonOutput {
   id?: string;
@@ -45,6 +50,9 @@ const readText = (value: unknown, nestedKey: string): string | undefined => {
   return typeof nested === "string" ? nested : undefined;
 };
 
+/** A shelf/grid header's title (headers come in several node types; all have a Text title). */
+const headerTitle = (header: unknown): string => readText(asRecord(header)?.title, "text") ?? "";
+
 const toYoutubeTrack = (id: string, title: string, author: string, duration: number): TrackType => ({
   id,
   title,
@@ -82,6 +90,8 @@ const MAX_SUGGESTIONS = 10;
 const PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,64}$/;
 // Saved on the client in localStorage; also bounds how many pages we fetch.
 const MAX_PLAYLIST_TRACKS = 200;
+const BROWSE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_BROWSE_CACHE_ENTRIES = 100;
 
 /** "3:55" / "1:02:03" -> seconds (0 if unknown). */
 const parseClockDuration = (text: string | undefined): number =>
@@ -112,12 +122,10 @@ const playlistItemToTrack = (item: unknown): TrackType | null => {
           .map((badgeItem) => readText(asRecord(badgeItem)?.text, "text"))
           .find((text) => text && /^\d+(:\d{2}){1,2}$/.test(text))
       : undefined;
-    return toYoutubeTrack(
-      id,
-      readText(metadata?.title, "text") ?? "YouTube Track",
-      channel ?? "YouTube",
-      parseClockDuration(badge)
-    );
+    const title = readText(metadata?.title, "text") ?? "YouTube Track";
+    // Music videos are often titled "Artist - Song"; the artist is already the channel.
+    const song = channel && title.startsWith(`${channel} - `) ? title.slice(channel.length + 3) : title;
+    return toYoutubeTrack(id, song, channel ?? "YouTube", parseClockDuration(badge));
   }
 
   const id = record.id;
@@ -149,6 +157,7 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 export class YoutubeManager {
   private innertube: Innertube | null = null;
+  private browseCache = new Map<string, { expiresAt: number; value: Promise<unknown> }>();
   private streamInnertubePromise: Promise<Innertube> | null = null;
   private streamCache = new Map<string, YoutubeStreamInfo>();
   private streamJobs = new Map<string, Promise<YoutubeStreamInfo>>();
@@ -410,6 +419,10 @@ export class YoutubeManager {
     if (!YoutubeManager.isYoutubeUrl(url)) return null;
     const list = new URL(url).searchParams.get("list");
     return list && PLAYLIST_ID_PATTERN.test(list) ? list : null;
+  }
+
+  static isPlaylistId(id: string): boolean {
+    return PLAYLIST_ID_PATTERN.test(id);
   }
 
   static getVideoId(url: string): string | null {
@@ -1104,7 +1117,8 @@ export class YoutubeManager {
   /** A playlist's name and (up to MAX_PLAYLIST_TRACKS) songs, following continuation pages. */
   async getPlaylist(playlistId: string): Promise<{ name: string; tracks: TrackType[] }> {
     // YouTube Mixes are generated per viewer and can't be fetched as a playlist.
-    if (playlistId.startsWith("RD"))
+    // RDCLAK… are YouTube Music's curated playlists, which are regular playlists.
+    if (playlistId.startsWith("RD") && !playlistId.startsWith("RDCLAK"))
       throw new Error("YouTube Mixes can't be imported; open a regular playlist instead");
     const yt = await this.getInnertube();
     let page = await yt.getPlaylist(playlistId);
@@ -1120,6 +1134,82 @@ export class YoutubeManager {
       page = await page.getContinuation();
     }
     return { name, tracks: tracks.slice(0, MAX_PLAYLIST_TRACKS) };
+  }
+
+  /** Browse pages change slowly: share one fetch per key for a few hours (failures aren't kept). */
+  private cachedBrowse<T>(key: string, load: () => Promise<T>): Promise<T> {
+    const now = Date.now();
+    const hit = this.browseCache.get(key);
+    if (hit && hit.expiresAt > now) return hit.value as Promise<T>;
+
+    const value = load();
+    this.browseCache.delete(key);
+    this.browseCache.set(key, { expiresAt: now + BROWSE_CACHE_TTL_MS, value });
+    value.catch(() => {
+      if (this.browseCache.get(key)?.value === value) this.browseCache.delete(key);
+    });
+    // Map keeps insertion order, so the first key is the oldest.
+    while (this.browseCache.size > MAX_BROWSE_CACHE_ENTRIES) {
+      const oldest = this.browseCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.browseCache.delete(oldest);
+    }
+    return value;
+  }
+
+  /** YouTube Music's "Moods & genres" categories, grouped as on its explore page. */
+  getMoods(): Promise<GetMoodsResponseType> {
+    return this.cachedBrowse("moods", async () => {
+      const yt = await this.getInnertube();
+      const page = await yt.actions.execute("/browse", {
+        browseId: "FEmusic_moods_and_genres",
+        client: "YTMUSIC",
+        parse: true,
+      });
+      const grids = page.contents_memo?.getType(YTNodes.Grid) ?? [];
+      const sections = grids.map((grid) => ({
+        title: headerTitle(grid.header),
+        categories: grid.items.filterType(YTNodes.MusicNavigationButton).flatMap((button) => {
+          const params = asRecord(button.endpoint.payload)?.params;
+          return typeof params === "string" ? [{ title: button.button_text, params }] : [];
+        }),
+      }));
+      return { sections: sections.filter((section) => section.categories.length > 0) };
+    });
+  }
+
+  /** The curated playlists of one mood/genre category, in its shelves ("Coffee shop blends", ...). */
+  getMoodPlaylists(params: string): Promise<GetMoodPlaylistsResponseType> {
+    return this.cachedBrowse(`mood:${params}`, async () => {
+      const yt = await this.getInnertube();
+      const page = await yt.actions.execute("/browse", {
+        browseId: "FEmusic_moods_and_genres_category",
+        params,
+        client: "YTMUSIC",
+        parse: true,
+      });
+      const shelves = page.contents_memo?.getType(YTNodes.MusicCarouselShelf, YTNodes.Grid) ?? [];
+      const sections = shelves.map((shelf) => {
+        const items = shelf.is(YTNodes.Grid) ? shelf.items : shelf.contents;
+        const playlists = items
+          .filterType(YTNodes.MusicTwoRowItem)
+          .filter((item) => item.item_type === "playlist" && item.id)
+          .map((item) => ({
+            id: (item.id ?? "").replace(/^VL/, ""), // browse IDs are "VL" + the playlist ID
+            title: item.title.toString(),
+            subtitle: item.subtitle?.toString() ?? "",
+            image: item.thumbnail[item.thumbnail.length - 1]?.url, // largest
+          }))
+          .filter((playlist) => PLAYLIST_ID_PATTERN.test(playlist.id));
+        return { title: headerTitle(shelf.header), playlists };
+      });
+      return { sections: sections.filter((section) => section.playlists.length > 0) };
+    });
+  }
+
+  /** A playlist to look through before playing or saving it (cached, unlike an import). */
+  getBrowsePlaylist(playlistId: string): Promise<{ name: string; tracks: TrackType[] }> {
+    return this.cachedBrowse(`playlist:${playlistId}`, () => this.getPlaylist(playlistId));
   }
 
   async getSuggestions(videoId: string): Promise<TrackType[]> {

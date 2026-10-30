@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { AudioSourceSchema } from "./basic";
+import { TrackSchema } from "./provider";
 import { ClientDataSchema } from "./WSBroadcast";
 
 // Legacy upload schema (deprecated)
@@ -80,3 +81,32 @@ export type DiscoveryRoomType = z.infer<typeof DiscoveryRoomSchema>;
 
 export const DiscoverRoomsSchema = z.array(DiscoveryRoomSchema);
 export type DiscoverRoomsType = z.infer<typeof DiscoverRoomsSchema>;
+
+// Browsing YouTube Music: moods & genres -> curated playlists -> songs
+export const MoodCategorySchema = z.object({
+  title: z.string(),
+  params: z.string(), // Opaque YouTube Music browse params for the category page
+});
+export type MoodCategoryType = z.infer<typeof MoodCategorySchema>;
+
+// Grouped as on YouTube Music: "Moods & moments", "Genres"
+export const GetMoodsResponseSchema = z.object({
+  sections: z.array(z.object({ title: z.string(), categories: z.array(MoodCategorySchema) })),
+});
+export type GetMoodsResponseType = z.infer<typeof GetMoodsResponseSchema>;
+
+export const BrowsePlaylistCardSchema = z.object({
+  id: z.string(), // Playlist ID, as used in ?list=
+  title: z.string(),
+  subtitle: z.string(),
+  image: z.string().optional(),
+});
+export type BrowsePlaylistCardType = z.infer<typeof BrowsePlaylistCardSchema>;
+
+export const GetMoodPlaylistsResponseSchema = z.object({
+  sections: z.array(z.object({ title: z.string(), playlists: z.array(BrowsePlaylistCardSchema) })),
+});
+export type GetMoodPlaylistsResponseType = z.infer<typeof GetMoodPlaylistsResponseSchema>;
+
+export const GetBrowsePlaylistResponseSchema = z.object({ name: z.string(), tracks: z.array(TrackSchema) });
+export type GetBrowsePlaylistResponseType = z.infer<typeof GetBrowsePlaylistResponseSchema>;

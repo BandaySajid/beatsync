@@ -1,10 +1,12 @@
 "use client";
 
 import { cn } from "@/lib/utils";
-import { Headphones } from "lucide-react";
+import { Compass, Headphones, Library } from "lucide-react";
 import { motion } from "motion/react";
 import { AudioUploaderMinimal } from "../AudioUploaderMinimal";
 import { Separator } from "../ui/separator";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "../ui/tabs";
+import { BrowsePanel } from "./BrowsePanel";
 import { RoomQRCode } from "./CopyRoom";
 import { GlobalVolumeControl } from "./GlobalVolumeControl";
 import { LibraryPanel } from "./LibraryPanel";
@@ -43,7 +45,23 @@ export const SoloPanel = ({ className }: { className?: string }) => {
       </div>
 
       <Separator className="bg-neutral-800/50 mt-2" />
-      <LibraryPanel />
+      <Tabs defaultValue="library" className="gap-0">
+        <TabsList className="mx-3.5 mt-3 w-auto bg-neutral-800/60">
+          <TabsTrigger value="library">
+            <Library className="size-3.5" /> Library
+          </TabsTrigger>
+          <TabsTrigger value="browse">
+            <Compass className="size-3.5" /> Browse
+          </TabsTrigger>
+        </TabsList>
+        {/* Kept mounted so switching tabs doesn't lose where you were browsing */}
+        <TabsContent value="library" forceMount className="data-[state=inactive]:hidden">
+          <LibraryPanel />
+        </TabsContent>
+        <TabsContent value="browse" forceMount className="data-[state=inactive]:hidden">
+          <BrowsePanel />
+        </TabsContent>
+      </Tabs>
     </motion.div>
   );
 };
