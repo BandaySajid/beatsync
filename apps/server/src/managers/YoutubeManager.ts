@@ -902,11 +902,15 @@ export class YoutubeManager {
   }
 
   /**
-   * Resolve the first few streams before anyone clicks: a cold resolve needs yt-dlp (~5s),
-   * a warm one is a cache hit. Failures are ignored here; play retries them.
+   * Get the first few streams ready before anyone clicks: a cold resolve needs yt-dlp
+   * (~3s) and a download (~4s); a warm one is a cache hit. The top pick is fully
+   * downloaded to the disk cache (bounded by MAX_CACHE_BYTES), so adding it only costs
+   * the R2 upload; the rest are only resolved. Failures are ignored here; add/play retries.
    */
   prewarm(videoIds: string[]): void {
-    for (const videoId of videoIds.slice(0, PREWARM_COUNT)) {
+    const [topPick, ...others] = videoIds.slice(0, PREWARM_COUNT);
+    if (topPick) void this.preloadVideo(topPick);
+    for (const videoId of others) {
       this.getStreamInfo(videoId).catch(() => undefined);
     }
   }
