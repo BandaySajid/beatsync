@@ -1,4 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, type Mock } from "bun:test";
+import type { WSUnicastType } from "@beatsync/shared";
+import { afterEach, beforeEach, describe, expect, it, mock, type Mock } from "bun:test";
 import sinon from "sinon";
 import { mockR2 } from "@/__tests__/mocks/r2";
 import { createMockServer, createMockWs } from "@/__tests__/mocks/websocket";
@@ -8,6 +9,24 @@ import { handleMessage } from "@/routes/websocketHandlers";
 
 mockR2();
 
+// Record unicasts here rather than counting ws.send calls: other test files mock.module
+// this module with no-op senders, and Bun shares module mocks across files.
+let unicasts: { ws: unknown; message: WSUnicastType }[] = [];
+void mock.module("@/utils/responses", () => ({
+  sendUnicast: mock(({ ws, message }: { ws: unknown; message: WSUnicastType }) => {
+    unicasts.push({ ws, message });
+  }),
+  sendBroadcast: mock(() => {
+    /* noop */
+  }),
+  sendToClient: mock(() => {
+    /* noop */
+  }),
+  corsHeaders: {},
+  jsonResponse: mock(() => new Response()),
+  errorResponse: mock(() => new Response()),
+}));
+
 // Liveness policy under test:
 // - silent > PING_AFTER_MS -> server sends a PING (clients answer from onmessage,
 //   which browsers do NOT throttle in background tabs, unlike timers)
@@ -16,9 +35,7 @@ const PING_AFTER_MS = RoomManager.LIVENESS_PING_AFTER_MS;
 const REAP_AFTER_MS = RoomManager.LIVENESS_REAP_AFTER_MS;
 
 const sentPings = (ws: ReturnType<typeof createMockWs>): number =>
-  (ws.send as unknown as Mock<(data: string) => number>).mock.calls.filter(
-    (call) => (JSON.parse(call[0]) as { type: string }).type === "LIVENESS_PING"
-  ).length;
+  unicasts.filter((unicast) => unicast.ws === ws && unicast.message.type === "LIVENESS_PING").length;
 
 const terminateCalls = (ws: ReturnType<typeof createMockWs>): number =>
   (ws.terminate as Mock<() => void>).mock.calls.length;
@@ -29,6 +46,7 @@ describe("Client Liveness (ping/pong)", () => {
 
   beforeEach(() => {
     clock = sinon.useFakeTimers();
+    unicasts = [];
     const roomIds = globalManager.getRoomIds();
     for (const roomId of roomIds) {
       globalManager.deleteRoom(roomId);
