@@ -44,10 +44,14 @@ export const trackFromQueueUrl = (url: string): LibraryTrack | null => {
   return { id: videoId, ...splitTrackName(extractFileNameFromUrl(url)), image: youtubeThumbnail(videoId) };
 };
 
+/** The queue URL of a library track, if it's already somewhere in the current queue. */
+export const queuedUrlFor = (track: LibraryTrack, state = useGlobalStore.getState()): string | undefined =>
+  typeof track.id === "string"
+    ? state.audioSources.find((source) => youtubeIdFromUrl(source.source.url) === track.id)?.source.url
+    : undefined;
+
 /** Whether a library track is already somewhere in the current queue. */
-export const isTrackQueued = (track: LibraryTrack): boolean =>
-  typeof track.id === "string" &&
-  useGlobalStore.getState().audioSources.some((source) => youtubeIdFromUrl(source.source.url) === track.id);
+export const isTrackQueued = (track: LibraryTrack): boolean => queuedUrlFor(track) !== undefined;
 
 /** Add a library track to the current room's queue (same request as adding from search). */
 export const queueLibraryTrack = (track: LibraryTrack): boolean => {

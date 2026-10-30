@@ -1,13 +1,13 @@
 "use client";
 
-import { AddToPlaylistButton } from "@/components/AddToPlaylistButton";
 import { LikeButton } from "@/components/LikeButton";
+import { TrackMenu } from "@/components/TrackMenu";
 import type { LibraryTrack } from "@/lib/libraryTrack";
 
-/** Heart + add-to-playlist, shown wherever a saveable song appears. */
+/** Per-song menu (play next, add to playlist) + heart, shown wherever a saveable song appears. */
 export const TrackSaveActions = ({ track }: { track: LibraryTrack }) => (
   <div className="flex items-center">
-    <AddToPlaylistButton track={track} />
+    <TrackMenu track={track} />
     <LikeButton track={track} />
   </div>
 );
