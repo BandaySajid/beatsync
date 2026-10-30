@@ -8,11 +8,13 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useIsSoloLayout } from "@/hooks/useIsSoloLayout";
 import type { LibraryTrack } from "@/lib/libraryTrack";
 import { playNext } from "@/lib/queueActions";
+import { useBrowseStore } from "@/store/browse";
 import { useCanMutate } from "@/store/global";
 import { useLibraryStore } from "@/store/library";
-import { ListStart, MoreHorizontal, Plus } from "lucide-react";
+import { ListStart, MoreHorizontal, Plus, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 /** Per-song menu: play next, and save to one of the on-device playlists (or a new one). */
@@ -22,6 +24,8 @@ export const TrackMenu = ({ track }: { track: LibraryTrack }) => {
   const addToPlaylist = useLibraryStore((state) => state.addToPlaylist);
   // Moving a song in the queue needs the same permission as dragging it.
   const canMutate = useCanMutate();
+  // Artist pages live in the solo panel's Browse tab, and only YouTube songs have one.
+  const canBrowse = useIsSoloLayout() && typeof track.id === "string";
 
   return (
     <DropdownMenu>
@@ -38,13 +42,16 @@ export const TrackMenu = ({ track }: { track: LibraryTrack }) => {
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
         {canMutate && (
-          <>
-            <DropdownMenuItem onSelect={() => playNext(track)}>
-              <ListStart className="size-4" /> Play next
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-          </>
+          <DropdownMenuItem onSelect={() => playNext(track)}>
+            <ListStart className="size-4" /> Play next
+          </DropdownMenuItem>
         )}
+        {canBrowse && (
+          <DropdownMenuItem onSelect={() => useBrowseStore.getState().openArtist(track.artist)}>
+            <UserRound className="size-4" /> Go to artist
+          </DropdownMenuItem>
+        )}
+        {(canMutate || canBrowse) && <DropdownMenuSeparator />}
         <DropdownMenuLabel className="text-xs text-neutral-500">Add to playlist</DropdownMenuLabel>
         <DropdownMenuItem
           onSelect={() => {

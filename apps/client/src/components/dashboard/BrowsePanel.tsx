@@ -1,13 +1,14 @@
 "use client";
 
-import { fetchBrowsePlaylist, fetchMoodPlaylists, fetchMoods } from "@/lib/api";
+import { fetchAlbum, fetchArtist, fetchBrowsePlaylist, fetchMoodPlaylists, fetchMoods } from "@/lib/api";
 import { trackFromSearchResult } from "@/lib/libraryTrack";
 import { cn } from "@/lib/utils";
+import { browseViewTitle, useBrowseStore } from "@/store/browse";
 import { useGlobalStore } from "@/store/global";
 import { useLibraryStore } from "@/store/library";
-import type { BrowsePlaylistCardType, MoodCategoryType } from "@beatsync/shared";
+import type { BrowseCardType, GetArtistResponseType, MoodCategoryType } from "@beatsync/shared";
 import { useQuery } from "@tanstack/react-query";
-import { ChevronLeft, ListPlus, Loader2 } from "lucide-react";
+import { ChevronLeft, ListMusic, ListPlus, Loader2 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { addTracksToQueue, LibraryRow, SmallButton } from "./LibraryPanel";
@@ -17,11 +18,6 @@ const BROWSE_STALE_MS = 60 * 60 * 1000;
 // Fewer cards per shelf means fewer thumbnails requested at once (see Thumb).
 const SHELF_LIMIT = 12;
 const THUMB_RETRIES = 3;
-
-type View =
-  | { kind: "moods" }
-  | { kind: "mood"; category: MoodCategoryType }
-  | { kind: "playlist"; category?: MoodCategoryType; playlist: BrowsePlaylistCardType };
 
 const Thumb = ({ src, className }: { src?: string; className: string }) => {
   const [attempt, setAttempt] = useState(0);
@@ -48,17 +44,6 @@ const Thumb = ({ src, className }: { src?: string; className: string }) => {
   );
 };
 
-const BackButton = ({ onClick, children }: { onClick: () => void; children: ReactNode }) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className="flex items-center gap-0.5 -ml-1 mb-2 text-xs text-neutral-400 hover:text-white cursor-pointer"
-  >
-    <ChevronLeft className="size-3.5" />
-    {children}
-  </button>
-);
-
 /** Loading and error states shared by every browse page. */
 const QueryState = ({ isError, refetch }: { isError: boolean; refetch: () => void }) =>
   isError ? (
@@ -72,7 +57,36 @@ const QueryState = ({ isError, refetch }: { isError: boolean; refetch: () => voi
     </div>
   );
 
-const MoodsView = ({ onOpen }: { onOpen: (category: MoodCategoryType) => void }) => {
+/** A horizontally scrolling row of playlists, albums or artists. */
+const Shelf = ({ title, cards }: { title: string; cards: BrowseCardType[] }) => {
+  const open = useBrowseStore((state) => state.open);
+  return (
+    <section>
+      <h3 className="text-xs font-medium text-neutral-400 mb-2">{title}</h3>
+      <div className="flex gap-2 overflow-x-auto pb-1.5 -mx-1 px-1 [scrollbar-width:thin] [scrollbar-color:#404040_transparent]">
+        {cards.slice(0, SHELF_LIMIT).map((card) => (
+          <button
+            key={`${card.kind}:${card.id}`}
+            type="button"
+            onClick={() => open({ kind: "card", card })}
+            className="w-24 flex-shrink-0 text-left cursor-pointer group"
+          >
+            <Thumb
+              src={card.image}
+              className={cn("w-24 h-24 group-hover:opacity-80", card.kind === "artist" ? "rounded-full" : "rounded")}
+            />
+            <p className={cn("mt-1 text-xs text-white line-clamp-2", card.kind === "artist" && "text-center")}>
+              {card.title}
+            </p>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+};
+
+const MoodsView = () => {
+  const open = useBrowseStore((state) => state.open);
   const { data, isError, refetch } = useQuery({
     queryKey: ["browse", "moods"],
     queryFn: fetchMoods,
@@ -90,7 +104,7 @@ const MoodsView = ({ onOpen }: { onOpen: (category: MoodCategoryType) => void })
               <button
                 key={category.params}
                 type="button"
-                onClick={() => onOpen(category)}
+                onClick={() => open({ kind: "mood", category })}
                 className="px-2.5 py-1 rounded-full bg-neutral-800 hover:bg-neutral-700 text-xs text-neutral-200 cursor-pointer"
               >
                 {category.title}
@@ -103,13 +117,7 @@ const MoodsView = ({ onOpen }: { onOpen: (category: MoodCategoryType) => void })
   );
 };
 
-const MoodView = ({
-  category,
-  onOpen,
-}: {
-  category: MoodCategoryType;
-  onOpen: (playlist: BrowsePlaylistCardType) => void;
-}) => {
+const MoodView = ({ category }: { category: MoodCategoryType }) => {
   const { data, isError, refetch } = useQuery({
     queryKey: ["browse", "mood", category.params],
     queryFn: () => fetchMoodPlaylists(category.params),
@@ -122,46 +130,32 @@ const MoodView = ({
       {!data ? (
         <QueryState isError={isError} refetch={() => void refetch()} />
       ) : (
-        data.sections.map((section) => (
-          <section key={section.title}>
-            <h3 className="text-xs font-medium text-neutral-400 mb-2">{section.title}</h3>
-            <div className="flex gap-2 overflow-x-auto pb-1.5 -mx-1 px-1 [scrollbar-width:thin] [scrollbar-color:#404040_transparent]">
-              {section.playlists.slice(0, SHELF_LIMIT).map((playlist) => (
-                <button
-                  key={playlist.id}
-                  type="button"
-                  onClick={() => onOpen(playlist)}
-                  className="w-24 flex-shrink-0 text-left cursor-pointer group"
-                >
-                  <Thumb src={playlist.image} className="w-24 h-24 rounded group-hover:opacity-80" />
-                  <p className="mt-1 text-xs text-white line-clamp-2">{playlist.title}</p>
-                </button>
-              ))}
-            </div>
-          </section>
-        ))
+        data.sections.map((section) => <Shelf key={section.title} title={section.title} cards={section.cards} />)
       )}
     </div>
   );
 };
 
-const PlaylistView = ({ playlist }: { playlist: BrowsePlaylistCardType }) => {
+/** The songs of a playlist or album, with add all / shuffle / save. */
+const TrackListView = ({ card }: { card: BrowseCardType }) => {
   const createPlaylist = useLibraryStore((state) => state.createPlaylist);
   useGlobalStore((state) => state.audioSources); // re-render the "in queue" marks when the queue changes
   const { data, isError, refetch } = useQuery({
-    queryKey: ["browse", "playlist", playlist.id],
-    queryFn: () => fetchBrowsePlaylist(playlist.id),
+    queryKey: ["browse", card.kind, card.id],
+    queryFn: () => (card.kind === "album" ? fetchAlbum(card.id) : fetchBrowsePlaylist(card.id)),
     staleTime: BROWSE_STALE_MS,
   });
   const tracks = data?.tracks.map(trackFromSearchResult) ?? [];
+  // Some pages (e.g. an artist's "all songs") have a generic name; keep the one we opened.
+  const name = card.title || data?.name || "Playlist";
 
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <Thumb src={playlist.image} className="w-16 h-16 rounded flex-shrink-0" />
+        <Thumb src={card.image} className="w-16 h-16 rounded flex-shrink-0" />
         <div className="min-w-0">
-          <h2 className="text-sm font-medium text-white line-clamp-2">{data?.name ?? playlist.title}</h2>
-          <p className="text-xs text-neutral-500 truncate">{data ? `${tracks.length} songs` : playlist.subtitle}</p>
+          <h2 className="text-sm font-medium text-white line-clamp-2">{name}</h2>
+          <p className="text-xs text-neutral-500 truncate">{data ? `${tracks.length} songs` : card.subtitle}</p>
         </div>
       </div>
       {!data ? (
@@ -174,8 +168,8 @@ const PlaylistView = ({ playlist }: { playlist: BrowsePlaylistCardType }) => {
             <SmallButton
               label="Save to your playlists"
               onClick={() => {
-                createPlaylist(data.name, tracks);
-                toast.success(`Saved "${data.name}" to your playlists`);
+                createPlaylist(name, tracks);
+                toast.success(`Saved "${name}" to your playlists`);
               }}
             >
               <ListPlus className="size-3" /> save
@@ -192,9 +186,88 @@ const PlaylistView = ({ playlist }: { playlist: BrowsePlaylistCardType }) => {
   );
 };
 
-/** Browse YouTube Music: moods & genres, their curated playlists, and the songs in them. */
+const ArtistView = ({ artist }: { artist: { id: string } | { name: string } }) => {
+  const open = useBrowseStore((state) => state.open);
+  useGlobalStore((state) => state.audioSources); // re-render the "in queue" marks when the queue changes
+  const { data, isError, error, refetch } = useQuery<GetArtistResponseType>({
+    queryKey: ["browse", "artist", "id" in artist ? artist.id : `name:${artist.name.toLowerCase()}`],
+    queryFn: () => fetchArtist(artist),
+    staleTime: BROWSE_STALE_MS,
+  });
+
+  if (!data) {
+    if (isError && error.message === "Artist not found")
+      return <p className="text-xs text-neutral-500">YouTube Music doesn&apos;t have an artist page for this name.</p>;
+    return <QueryState isError={isError} refetch={() => void refetch()} />;
+  }
+  const songs = data.songs.map(trackFromSearchResult);
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-3">
+        <Thumb src={data.image} className="w-16 h-16 rounded-full flex-shrink-0" />
+        <h2 className="text-base font-medium text-white line-clamp-2">{data.name}</h2>
+      </div>
+      {data.description && <p className="text-xs text-neutral-400 line-clamp-3">{data.description}</p>}
+
+      {songs.length > 0 && (
+        <section>
+          <div className="flex items-center justify-between mb-1">
+            <h3 className="text-xs font-medium text-neutral-400">Top songs</h3>
+            <div className="flex items-center gap-1">
+              <SmallButton onClick={() => addTracksToQueue(songs)}>add all</SmallButton>
+              {data.allSongsPlaylistId && (
+                <SmallButton
+                  label={`All songs by ${data.name}`}
+                  onClick={() =>
+                    open({
+                      kind: "card",
+                      card: {
+                        kind: "playlist",
+                        id: data.allSongsPlaylistId!,
+                        title: `All songs by ${data.name}`,
+                        subtitle: "",
+                        image: data.image,
+                      },
+                    })
+                  }
+                >
+                  <ListMusic className="size-3" /> all songs
+                </SmallButton>
+              )}
+            </div>
+          </div>
+          <div className="space-y-0.5">
+            {songs.map((track) => (
+              <LibraryRow key={track.id} track={track} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {data.shelves.map((shelf) => (
+        <Shelf key={shelf.title} title={shelf.title} cards={shelf.cards} />
+      ))}
+    </div>
+  );
+};
+
+const BackButton = ({ children }: { children: ReactNode }) => (
+  <button
+    type="button"
+    onClick={() => useBrowseStore.getState().back()}
+    className="flex items-center gap-0.5 -ml-1 mb-2 text-xs text-neutral-400 hover:text-white cursor-pointer"
+  >
+    <ChevronLeft className="size-3.5" />
+    <span className="truncate">{children}</span>
+  </button>
+);
+
+/** Browse YouTube Music: moods & genres, curated playlists, albums and artist pages. */
 export const BrowsePanel = () => {
-  const [view, setView] = useState<View>({ kind: "moods" });
+  const stack = useBrowseStore((state) => state.stack);
+  const view = stack[stack.length - 1];
+  const previous = stack.length > 1 ? stack[stack.length - 2] : null;
   const topRef = useRef<HTMLDivElement>(null);
 
   // Each page starts at its top, not where the previous one was scrolled to.
@@ -204,26 +277,16 @@ export const BrowsePanel = () => {
 
   return (
     <div ref={topRef} className="px-3.5 py-3">
-      {view.kind === "moods" && <MoodsView onOpen={(category) => setView({ kind: "mood", category })} />}
-      {view.kind === "mood" && (
-        <>
-          <BackButton onClick={() => setView({ kind: "moods" })}>Moods &amp; genres</BackButton>
-          <MoodView
-            category={view.category}
-            onOpen={(playlist) => setView({ kind: "playlist", category: view.category, playlist })}
-          />
-        </>
-      )}
-      {view.kind === "playlist" && (
-        <>
-          <BackButton
-            onClick={() => setView(view.category ? { kind: "mood", category: view.category } : { kind: "moods" })}
-          >
-            {view.category?.title ?? "Moods & genres"}
-          </BackButton>
-          <PlaylistView playlist={view.playlist} />
-        </>
-      )}
+      {previous && <BackButton>{browseViewTitle(previous)}</BackButton>}
+      {view.kind === "moods" && <MoodsView />}
+      {view.kind === "mood" && <MoodView category={view.category} />}
+      {view.kind === "artistByName" && <ArtistView artist={{ name: view.name }} />}
+      {view.kind === "card" &&
+        (view.card.kind === "artist" ? (
+          <ArtistView artist={{ id: view.card.id }} />
+        ) : (
+          <TrackListView key={view.card.id} card={view.card} />
+        ))}
     </div>
   );
 };

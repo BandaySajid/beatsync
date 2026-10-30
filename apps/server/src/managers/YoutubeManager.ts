@@ -3,6 +3,8 @@ import path from "path";
 import { ClientType, Innertube, YTNodes } from "youtubei.js";
 import {
   R2_AUDIO_FILE_NAME_DELIMITER,
+  type BrowseCardType,
+  type GetArtistResponseType,
   type GetMoodPlaylistsResponseType,
   type GetMoodsResponseType,
   type TrackType,
@@ -53,6 +55,51 @@ const readText = (value: unknown, nestedKey: string): string | undefined => {
 /** A shelf/grid header's title (headers come in several node types; all have a Text title). */
 const headerTitle = (header: unknown): string => readText(asRecord(header)?.title, "text") ?? "";
 
+/** "JAGJIT SINGH" / "Jagjit Singh" / "Jágjit-Singh" all compare equal. */
+const normalizeName = (name: string) =>
+  name
+    .normalize("NFKD")
+    .replace(/\p{M}/gu, "")
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]/gu, "");
+
+const CARD_KINDS = { playlist: "playlist", album: "album", artist: "artist" } as const;
+
+/** A YouTube Music card (playlist, album or artist) as a browse card; null for videos and the like. */
+const twoRowItemToCard = (item: YTNodes.MusicTwoRowItem): BrowseCardType | null => {
+  const kind = CARD_KINDS[item.item_type as keyof typeof CARD_KINDS] as BrowseCardType["kind"] | undefined;
+  if (!kind || !item.id) return null;
+  const id = kind === "playlist" ? item.id.replace(/^VL/, "") : item.id; // playlist browse IDs are "VL" + the ID
+  const valid = { playlist: PLAYLIST_ID_PATTERN, album: ALBUM_ID_PATTERN, artist: ARTIST_ID_PATTERN }[kind];
+  if (!valid.test(id)) return null;
+  return {
+    kind,
+    id,
+    title: item.title.toString(),
+    subtitle: item.subtitle?.toString() ?? "",
+    image: item.thumbnail[item.thumbnail.length - 1]?.url, // largest
+  };
+};
+
+/**
+ * A song row on a YouTube Music artist, album or playlist page. Album rows leave out the
+ * artist, so it's passed in; playlist rows list them as "authors".
+ */
+const listItemToTrack = (item: unknown, fallbackArtist: string): TrackType | null => {
+  const record = asRecord(item);
+  const id = record?.id;
+  if (typeof id !== "string" || !VIDEO_ID_PATTERN.test(id)) return null;
+  const people = record?.artists ?? record?.authors;
+  const artists = Array.isArray(people) ? (people as unknown[]) : [];
+  const seconds = asRecord(record?.duration)?.seconds;
+  return toYoutubeTrack(
+    id,
+    readText(record?.title, "text") ?? "YouTube Track",
+    readText(artists[0], "name") ?? fallbackArtist,
+    typeof seconds === "number" ? seconds : 0
+  );
+};
+
 const toYoutubeTrack = (id: string, title: string, author: string, duration: number): TrackType => ({
   id,
   title,
@@ -88,6 +135,8 @@ const MAX_TITLE_LENGTH = 120;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const MAX_SUGGESTIONS = 10;
 const PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,64}$/;
+const ARTIST_ID_PATTERN = /^UC[A-Za-z0-9_-]{22}$/;
+const ALBUM_ID_PATTERN = /^MPREb_[A-Za-z0-9_-]{6,40}$/;
 // Saved on the client in localStorage; also bounds how many pages we fetch.
 const MAX_PLAYLIST_TRACKS = 200;
 const BROWSE_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -423,6 +472,14 @@ export class YoutubeManager {
 
   static isPlaylistId(id: string): boolean {
     return PLAYLIST_ID_PATTERN.test(id);
+  }
+
+  static isArtistId(id: string): boolean {
+    return ARTIST_ID_PATTERN.test(id);
+  }
+
+  static isAlbumId(id: string): boolean {
+    return ALBUM_ID_PATTERN.test(id);
   }
 
   static getVideoId(url: string): string | null {
@@ -1189,27 +1246,118 @@ export class YoutubeManager {
         parse: true,
       });
       const shelves = page.contents_memo?.getType(YTNodes.MusicCarouselShelf, YTNodes.Grid) ?? [];
-      const sections = shelves.map((shelf) => {
-        const items = shelf.is(YTNodes.Grid) ? shelf.items : shelf.contents;
-        const playlists = items
+      const sections = shelves.map((shelf) => ({
+        title: headerTitle(shelf.header),
+        cards: (shelf.is(YTNodes.Grid) ? shelf.items : shelf.contents)
           .filterType(YTNodes.MusicTwoRowItem)
-          .filter((item) => item.item_type === "playlist" && item.id)
-          .map((item) => ({
-            id: (item.id ?? "").replace(/^VL/, ""), // browse IDs are "VL" + the playlist ID
-            title: item.title.toString(),
-            subtitle: item.subtitle?.toString() ?? "",
-            image: item.thumbnail[item.thumbnail.length - 1]?.url, // largest
-          }))
-          .filter((playlist) => PLAYLIST_ID_PATTERN.test(playlist.id));
-        return { title: headerTitle(shelf.header), playlists };
-      });
-      return { sections: sections.filter((section) => section.playlists.length > 0) };
+          .flatMap((item) => twoRowItemToCard(item) ?? [])
+          .filter((card) => card.kind === "playlist"),
+      }));
+      return { sections: sections.filter((section) => section.cards.length > 0) };
     });
   }
 
-  /** A playlist to look through before playing or saving it (cached, unlike an import). */
+  /**
+   * A playlist to look through before playing or saving it (cached, unlike an import).
+   * Read through YouTube Music first: it names each song's artists, where the regular
+   * playlist page only has the uploading channel (often a label like "Sony Music India").
+   */
   getBrowsePlaylist(playlistId: string): Promise<{ name: string; tracks: TrackType[] }> {
-    return this.cachedBrowse(`playlist:${playlistId}`, () => this.getPlaylist(playlistId));
+    return this.cachedBrowse(`playlist:${playlistId}`, async () => {
+      if (playlistId.startsWith("RD") && !playlistId.startsWith("RDCLAK")) return this.getPlaylist(playlistId); // throws
+      try {
+        const yt = await this.getInnertube();
+        let page = await yt.music.getPlaylist(playlistId);
+        const name = headerTitle(page.header);
+        const tracks: TrackType[] = [];
+        for (;;) {
+          tracks.push(...(page.items ?? []).flatMap((item) => listItemToTrack(item, "YouTube") ?? []));
+          if (tracks.length >= MAX_PLAYLIST_TRACKS || !page.has_continuation) break;
+          page = await page.getContinuation();
+        }
+        if (tracks.length > 0) return { name: name || "Playlist", tracks: tracks.slice(0, MAX_PLAYLIST_TRACKS) };
+      } catch (error) {
+        console.warn(`[YouTube] Music playlist ${playlistId} failed, using the regular playlist page:`, error);
+      }
+      return this.getPlaylist(playlistId);
+    });
+  }
+
+  /** An artist's page: top songs, albums & singles, playlists they're on and similar artists. */
+  getArtist(artistId: string): Promise<GetArtistResponseType> {
+    return this.cachedBrowse(`artist:${artistId}`, async () => {
+      const yt = await this.getInnertube();
+      const artist = await yt.music.getArtist(artistId);
+      const header = asRecord(artist.header);
+      const name = headerTitle(header) || "Artist";
+      const headerImages = asRecord(header?.thumbnail)?.contents;
+
+      let songs: TrackType[] = [];
+      let allSongsPlaylistId: string | undefined;
+      const shelves: GetArtistResponseType["shelves"] = [];
+      for (const section of artist.sections) {
+        if (section.is(YTNodes.MusicShelf)) {
+          if (songs.length > 0) continue; // only the first one is "Top songs"
+          songs = section.contents.flatMap((item) => listItemToTrack(item, name) ?? []);
+          const allSongs = asRecord(section.endpoint?.payload)?.browseId;
+          const playlistId = typeof allSongs === "string" ? allSongs.replace(/^VL/, "") : "";
+          if (PLAYLIST_ID_PATTERN.test(playlistId)) allSongsPlaylistId = playlistId;
+        } else if (section.is(YTNodes.MusicCarouselShelf)) {
+          // Videos are left out: they're mostly the same songs again.
+          const cards = section.contents
+            .filterType(YTNodes.MusicTwoRowItem)
+            .flatMap((item) => twoRowItemToCard(item) ?? []);
+          if (cards.length > 0) shelves.push({ title: headerTitle(section.header), cards });
+        }
+      }
+
+      return {
+        id: artistId,
+        name,
+        image: Array.isArray(headerImages) ? readText(headerImages[headerImages.length - 1], "url") : undefined,
+        description: readText(header?.description, "text"),
+        songs,
+        allSongsPlaylistId,
+        shelves,
+      };
+    });
+  }
+
+  /** The YouTube Music artist best matching a name (songs only carry the artist's name). */
+  findArtistId(name: string): Promise<string | null> {
+    // Auto-generated "Artist - Topic" channels are named after the artist.
+    const query = name.replace(/ - Topic$/, "").trim();
+    return this.cachedBrowse(`artist-name:${query.toLowerCase()}`, async () => {
+      const yt = await this.getInnertube();
+      const results = await yt.music.search(query, { type: "artist" });
+      // Only the same name: a song from a label's channel ("Sony Music India") would otherwise
+      // open whichever artist the search happens to rank first.
+      const wanted = normalizeName(query);
+      const match = results.contents
+        ?.flatMap((shelf) => (shelf.is(YTNodes.MusicShelf) ? shelf.contents : []))
+        .find(
+          (item) =>
+            item.item_type === "artist" &&
+            item.id &&
+            ARTIST_ID_PATTERN.test(item.id) &&
+            normalizeName(readText(asRecord(item)?.name, "text") ?? "") === wanted
+        );
+      return match?.id ?? null;
+    });
+  }
+
+  /** An album's songs (for album cards on artist pages). */
+  getAlbum(albumId: string): Promise<{ name: string; tracks: TrackType[] }> {
+    return this.cachedBrowse(`album:${albumId}`, async () => {
+      const yt = await this.getInnertube();
+      const album = await yt.music.getAlbum(albumId);
+      const header = asRecord(album.header);
+      const artist = readText(header?.strapline_text_one, "text") ?? "YouTube";
+      return {
+        name: headerTitle(header) || "Album",
+        tracks: album.contents.flatMap((item) => listItemToTrack(item, artist) ?? []),
+      };
+    });
   }
 
   async getSuggestions(videoId: string): Promise<TrackType[]> {

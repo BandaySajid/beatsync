@@ -1,6 +1,7 @@
 import {
   DiscoverRoomsType,
   GetActiveRoomsType,
+  GetArtistResponseType,
   GetBrowsePlaylistResponseType,
   GetDefaultAudioType,
   GetMoodPlaylistsResponseType,
@@ -127,3 +128,14 @@ export const fetchMoodPlaylists = (params: string) =>
 
 export const fetchBrowsePlaylist = (id: string) =>
   fetchBrowse<GetBrowsePlaylistResponseType>(`/browse/playlist?id=${encodeURIComponent(id)}`);
+
+export const fetchAlbum = (id: string) =>
+  fetchBrowse<GetBrowsePlaylistResponseType>(`/browse/album?id=${encodeURIComponent(id)}`);
+
+/** An artist page by channel ID, or by name (songs only know their artist's name). */
+export const fetchArtist = (artist: { id: string } | { name: string }) =>
+  fetchBrowse<GetArtistResponseType>(
+    "id" in artist
+      ? `/browse/artist?id=${encodeURIComponent(artist.id)}`
+      : `/browse/artist?name=${encodeURIComponent(artist.name)}`
+  );
