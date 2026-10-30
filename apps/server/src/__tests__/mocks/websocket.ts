@@ -16,6 +16,7 @@ export function createMockWs(data: {
       username: data.username ?? `user-${data.clientId}`,
       roomId: data.roomId ?? "test-room",
       privateRoom: data.privateRoom ?? false,
+      denied: false,
     },
     subscribe: mock(() => {
       /* noop */

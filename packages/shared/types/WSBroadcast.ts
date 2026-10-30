@@ -21,6 +21,7 @@ export const ServerActionEnum = z.enum([
   "LIVENESS_PING", // Liveness probe; client replies with LIVENESS_PONG
   "SUGGESTIONS", // Songs similar to the last YouTube track added to the room
   "PLAYLIST_IMPORT_RESPONSE", // A YouTube playlist read for IMPORT_PLAYLIST (unicast)
+  "ROOM_INVITE", // Invite token for a private (solo) room, so members can share an invite link (unicast)
 ]);
 
 // Client change

@@ -31,6 +31,11 @@ export const PlaylistImportResponseSchema = z.object({
 });
 export type PlaylistImportResponseType = z.infer<typeof PlaylistImportResponseSchema>;
 
+const RoomInviteSchema = z.object({
+  type: z.literal(ServerActionEnum.enum.ROOM_INVITE),
+  inviteToken: z.string(),
+});
+
 // Liveness probe sent to clients that have been silent (e.g. backgrounded tabs
 // with throttled timers). Clients reply with a LIVENESS_PONG request.
 const LivenessPingMessageSchema = z.object({
@@ -43,5 +48,6 @@ export const WSUnicastSchema = z.discriminatedUnion("type", [
   MusicSearchResponseSchema,
   LivenessPingMessageSchema,
   PlaylistImportResponseSchema,
+  RoomInviteSchema,
 ]);
 export type WSUnicastType = z.infer<typeof WSUnicastSchema>;

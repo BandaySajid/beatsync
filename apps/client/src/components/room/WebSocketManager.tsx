@@ -9,7 +9,7 @@ import { getWsUrl } from "@/lib/urls";
 import { useGlobalStore } from "@/store/global";
 import { useRoomStore } from "@/store/room";
 import { sendWSRequest } from "@/utils/ws";
-import { ClientActionEnum, WSResponseSchema } from "@beatsync/shared";
+import { ClientActionEnum, PRIVATE_ROOM_CLOSE_CODE, WSResponseSchema } from "@beatsync/shared";
 import { dispatchWSResponse } from "@/websocket/dispatch";
 import { useEffect } from "react";
 
@@ -48,16 +48,23 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
     createConnection: () => createConnection(),
   });
 
-  // Cache secrets from page URL (don't change across reconnections)
-  const isClient = typeof window !== "undefined";
-  const searchParams = isClient ? new URLSearchParams(window.location.search) : null;
-  const adminSecret = searchParams?.get("admin") ?? null;
-  // Check URL param first, then localStorage (set once via: localStorage.setItem("creatorSecret", "..."))
-  const creatorSecret = searchParams?.get("creator") ?? (isClient ? localStorage.getItem("creatorSecret") : null);
-  const adminParam = adminSecret ? `&admin=${encodeURIComponent(adminSecret)}` : "";
-  const creatorParam = creatorSecret ? `&creator=${encodeURIComponent(creatorSecret)}` : "";
-  // Solo sessions ask the server to keep the room out of the public room list.
-  const privateParam = searchParams?.get("solo") === "1" ? "&private=1" : "";
+  // Read the page URL when connecting (always from an effect or event), not while rendering:
+  // after a client-side navigation (e.g. "Listen solo") Next.js renders the new page before
+  // it updates window.location, so a render-time read sees the previous page's URL.
+  const urlParams = () => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const adminSecret = searchParams.get("admin");
+    // Check URL param first, then localStorage (set once via: localStorage.setItem("creatorSecret", "..."))
+    const creatorSecret = searchParams.get("creator") ?? localStorage.getItem("creatorSecret");
+    const invite = searchParams.get("invite");
+    return [
+      adminSecret ? `&admin=${encodeURIComponent(adminSecret)}` : "",
+      creatorSecret ? `&creator=${encodeURIComponent(creatorSecret)}` : "",
+      // Solo sessions ask the server to make the room private.
+      searchParams.get("solo") === "1" ? "&private=1" : "",
+      invite ? `&invite=${encodeURIComponent(invite)}` : "",
+    ].join("");
+  };
 
   const createConnection = () => {
     // Never tear down a healthy connection. The effect, bfcache handler and
@@ -68,7 +75,7 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
       return previous;
     }
 
-    const SOCKET_URL = `${getWsUrl()}?roomId=${roomId}&username=${username}&clientId=${clientId}&clientSecret=${getClientSecret()}${adminParam}${creatorParam}${privateParam}`;
+    const SOCKET_URL = `${getWsUrl()}?roomId=${roomId}&username=${username}&clientId=${clientId}&clientSecret=${getClientSecret()}${urlParams()}`;
     console.log("Creating new WS connection to", SOCKET_URL.replace(/clientSecret=[^&]*/, "clientSecret=***"));
 
     // Clear previous connection if it exists
@@ -125,7 +132,7 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
     // - Network chnage
     // - Server restart
     // So we should try to reconnect.
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       // A superseded socket closing must not trigger reconnection over the
       // healthy replacement socket.
       if (useGlobalStore.getState().socket !== ws) return;
@@ -133,6 +140,12 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
       console.log("Websocket closed unexpectedly");
       // Stop NTP heartbeat
       stopHeartbeat();
+
+      // A private room without an invite: retrying won't help.
+      if (event.code === PRIVATE_ROOM_CLOSE_CODE) {
+        useRoomStore.setState({ accessDenied: true });
+        return;
+      }
 
       // Clear NTP measurements on new connection to avoid stale data
       useGlobalStore.getState().onConnectionReset();

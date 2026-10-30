@@ -56,6 +56,9 @@ export const handleWebSocketUpgrade = (req: Request, server: BunServer) => {
     isAdmin,
     isCreator,
     privateRoom: url.searchParams.get("private") === "1",
+    // A private (solo) room only lets in its members and people with its invite link. The
+    // socket is still opened so the client can be told why (close code), instead of a bare 403.
+    denied: globalManager.getRoom(roomId)?.canJoin(clientId, url.searchParams.get("invite")) === false,
   };
 
   // Upgrade the connection with the WSData context

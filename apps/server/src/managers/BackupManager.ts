@@ -56,7 +56,7 @@ export class BackupManager {
       room.restoreClientData(roomData.clientDatas);
 
       // A restart must not leak a solo session into /discover.
-      if (roomData.isPrivate) room.setPrivate();
+      if (roomData.isPrivate) room.setPrivate(roomData.inviteToken);
 
       // Restore playback state - but validate it first
       const playbackStateIsValidTrack = validAudioSources.some(
