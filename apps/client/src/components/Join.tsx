@@ -15,6 +15,7 @@ import { Controller, useForm } from "react-hook-form";
 import { FaDiscord, FaGithub } from "react-icons/fa";
 import { toast } from "sonner";
 import { ActiveRooms } from "./ActiveRooms";
+import { ContinueListening } from "./ContinueListening";
 // import { AnnouncementBanner } from "./AnnouncementBanner";
 
 interface JoinFormData {
@@ -237,6 +238,8 @@ export const Join = () => {
             </motion.div>
 
             <div className="flex flex-col gap-3 mt-5">
+              <ContinueListening disabled={isJoining || isCreating} />
+
               <motion.button
                 type="button"
                 className="px-5 py-2 bg-primary text-primary-foreground rounded-full font-medium text-sm tracking-wide cursor-pointer w-full hover:shadow-lg hover:shadow-zinc-50/50 transition-shadow duration-500 flex items-center justify-center"
