@@ -5,6 +5,38 @@ import { useLibraryStore } from "@/store/library";
 
 const SONG: LibraryTrack = { id: "dQw4w9WgXcQ", title: "Never Gonna Give You Up", artist: "Rick Astley" };
 
+const OTHER: LibraryTrack = { id: "9bZkp7q19f0", title: "Gangnam Style", artist: "PSY" };
+
+describe("on-device library: playlists", () => {
+  beforeEach(() => {
+    localStorage.clear();
+    useLibraryStore.setState({ liked: [], playlists: [] });
+  });
+
+  it("creates, fills, reorders, renames and deletes a playlist, saved in this browser", () => {
+    const { createPlaylist, addToPlaylist, moveInPlaylist, renamePlaylist, removeFromPlaylist, deletePlaylist } =
+      useLibraryStore.getState();
+    const id = createPlaylist("Road trip", SONG);
+    addToPlaylist(id, OTHER);
+    addToPlaylist(id, SONG); // already in it: ignored
+    expect(useLibraryStore.getState().playlists[0].tracks.map((t) => t.id)).toEqual([SONG.id, OTHER.id]);
+
+    moveInPlaylist(id, 1, 0);
+    moveInPlaylist(id, 0, -1); // out of range: ignored
+    renamePlaylist(id, "Late night");
+    expect(useLibraryStore.getState().playlists[0]).toMatchObject({
+      name: "Late night",
+      tracks: [OTHER, SONG],
+    });
+    expect(JSON.parse(localStorage.getItem("beatsync:library-v1")!).state.playlists[0].name).toBe("Late night");
+
+    removeFromPlaylist(id, OTHER.id);
+    expect(useLibraryStore.getState().playlists[0].tracks).toEqual([SONG]);
+    deletePlaylist(id);
+    expect(useLibraryStore.getState().playlists).toEqual([]);
+  });
+});
+
 describe("on-device library: liked songs", () => {
   beforeEach(() => {
     localStorage.clear();
