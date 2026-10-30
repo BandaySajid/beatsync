@@ -32,9 +32,15 @@ const seededRandom = (seed: string) => {
 
 const artistName = (name: string) => name.replace(/ - Topic$/i, "").trim();
 
-/** The artists you listen to most (liked songs count double), each with a seed song for the day. */
-export const pickMixSeeds = (liked: LibraryTrack[], history: LibraryTrack[], day: string): MixSeed[] => {
-  const byArtist = new Map<string, { artist: string; score: number; tracks: (LibraryTrack & { id: string })[] }>();
+export interface RankedArtist {
+  artist: string;
+  score: number;
+  tracks: (LibraryTrack & { id: string })[]; // Their YouTube songs in your library, newest first
+}
+
+/** The artists you listen to most, most first: a liked song counts 2, a recent play 1. */
+export const rankArtists = (liked: LibraryTrack[], history: LibraryTrack[]): RankedArtist[] => {
+  const byArtist = new Map<string, RankedArtist>();
   const add = (track: LibraryTrack, weight: number) => {
     const { id } = track;
     if (typeof id !== "string") return; // only YouTube songs have a radio
@@ -48,10 +54,13 @@ export const pickMixSeeds = (liked: LibraryTrack[], history: LibraryTrack[], day
   };
   liked.forEach((track) => add(track, 2));
   history.forEach((track) => add(track, 1));
+  return [...byArtist.values()].sort((a, b) => b.score - a.score || a.artist.localeCompare(b.artist));
+};
 
+/** The artists you listen to most, each with a seed song for the day. */
+export const pickMixSeeds = (liked: LibraryTrack[], history: LibraryTrack[], day: string): MixSeed[] => {
   const random = seededRandom(day);
-  return [...byArtist.values()]
-    .sort((a, b) => b.score - a.score || a.artist.localeCompare(b.artist))
+  return rankArtists(liked, history)
     .slice(0, MIX_COUNT)
     .map(({ artist, tracks }) => ({
       artist,
