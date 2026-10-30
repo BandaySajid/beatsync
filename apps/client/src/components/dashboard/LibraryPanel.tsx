@@ -5,13 +5,26 @@ import { isTrackQueued, queueLibraryTrack, type LibraryTrack } from "@/lib/libra
 import { cn } from "@/lib/utils";
 import { useGlobalStore } from "@/store/global";
 import { useLibraryStore, type Playlist } from "@/store/library";
-import { ArrowDown, ArrowUp, Check, ChevronRight, Heart, ListMusic, Pencil, Plus, Trash2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowUp,
+  Check,
+  ChevronRight,
+  Heart,
+  History,
+  ListMusic,
+  Pencil,
+  Plus,
+  Trash2,
+  X,
+} from "lucide-react";
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 
 // shortcut: each add makes the server resolve + download that song with no server-side
 // concurrency limit, so batch adds are capped; raise this once the server queues them.
 const ADD_ALL_LIMIT = 20;
+const RECENT_SHOWN = 8;
 
 /** Add songs to the queue in order (or shuffled), skipping ones already queued. */
 const addTracksToQueue = (tracks: LibraryTrack[], { shuffle = false } = {}) => {
@@ -187,12 +200,24 @@ const SectionHeader = ({ icon, title, action }: { icon: ReactNode; title: string
 export const LibraryPanel = () => {
   const liked = useLibraryStore((state) => state.liked);
   const playlists = useLibraryStore((state) => state.playlists);
+  const history = useLibraryStore((state) => state.history);
   const createPlaylist = useLibraryStore((state) => state.createPlaylist);
   const [openPlaylistId, setOpenPlaylistId] = useState<string | null>(null);
   useGlobalStore((state) => state.audioSources); // re-render the "in queue" marks when the queue changes
 
   return (
     <div className="px-3.5 py-3 space-y-5">
+      {history.length > 0 && (
+        <section>
+          <SectionHeader icon={<History className="size-3" />} title="Recently played" />
+          <div className="space-y-0.5">
+            {history.slice(0, RECENT_SHOWN).map((track) => (
+              <LibraryRow key={track.id} track={track} />
+            ))}
+          </div>
+        </section>
+      )}
+
       <section>
         <SectionHeader
           icon={<Heart className="size-3 fill-current text-green-500" />}

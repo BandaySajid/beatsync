@@ -10,10 +10,25 @@ export interface Playlist {
   tracks: LibraryTrack[];
 }
 
+/** The last solo session, for "Continue listening". */
+export interface LastSession {
+  tracks: LibraryTrack[]; // the queue, in order
+  currentId?: LibraryTrack["id"];
+  positionSeconds: number;
+  savedAt: number;
+}
+
+export const HISTORY_LIMIT = 50;
+
 interface LibraryState {
   liked: LibraryTrack[]; // newest first
   playlists: Playlist[]; // newest first
+  history: LibraryTrack[]; // recently played, newest first, no duplicates
+  lastSession: LastSession | null;
   toggleLike: (track: LibraryTrack) => void;
+  recordPlayed: (track: LibraryTrack) => void;
+  saveLastSession: (session: LastSession) => void;
+  clearLastSession: () => void;
   /** Creates a playlist (optionally with a first song) and returns its id. */
   createPlaylist: (name: string, firstTrack?: LibraryTrack) => string;
   renamePlaylist: (id: string, name: string) => void;
@@ -32,6 +47,14 @@ export const useLibraryStore = create<LibraryState>()(
     (set) => ({
       liked: [],
       playlists: [],
+      history: [],
+      lastSession: null,
+      recordPlayed: (track) =>
+        set((state) => ({
+          history: [track, ...state.history.filter((played) => played.id !== track.id)].slice(0, HISTORY_LIMIT),
+        })),
+      saveLastSession: (lastSession) => set({ lastSession }),
+      clearLastSession: () => set({ lastSession: null }),
       toggleLike: (track) =>
         set((state) => ({
           liked: state.liked.some((liked) => liked.id === track.id)
@@ -72,7 +95,7 @@ export const useLibraryStore = create<LibraryState>()(
           }),
         })),
     }),
-    // Version 1 data (liked only) loads as-is; playlists start empty.
+    // Older saved data (liked only, or + playlists) loads as-is; new fields start empty.
     { name: "beatsync:library-v1" }
   )
 );
