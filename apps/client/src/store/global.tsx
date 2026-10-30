@@ -3,7 +3,9 @@ import { audioContextManager, isAudioContextPaused } from "@/lib/audioContextMan
 import { getClientId } from "@/lib/clientId";
 import { getKickBuffer } from "@/components/dashboard/Metronome";
 import { IS_DEMO_MODE } from "@/lib/demo";
+import { soloPlayer } from "@/lib/soloPlayer";
 import { getApiUrl } from "@/lib/urls";
+import { useRoomStore } from "@/store/room";
 import { extractFileNameFromUrl } from "@/lib/utils";
 import {
   calculateOffsetEstimate,
@@ -586,6 +588,41 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     });
   };
 
+  // Solo engine: a solo session with nobody else in it streams through <audio>
+  // (see soloPlayer). Playback paths check this first; the room (Web Audio) path
+  // after each check is unchanged.
+  const isSoloEngine = () => !IS_DEMO_MODE && useRoomStore.getState().isSolo && get().connectedClients.length <= 1;
+
+  const playSolo = (url: string, positionSeconds: number) => {
+    set({ selectedAudioUrl: url, isPlaying: true, currentTime: positionSeconds });
+    void soloPlayer.play(resolveAudioUrl(url), positionSeconds).then((started) => {
+      if (started) return;
+      set({ isPlaying: false });
+      toast.info("Tap play to start audio", { id: "solo-play" });
+    });
+  };
+
+  const pauseSolo = () => {
+    soloPlayer.pause();
+    set({ isPlaying: false, currentTime: soloPlayer.currentTime });
+  };
+
+  // Someone joined (solo -> room engine) or left (room -> solo engine) mid-song:
+  // continue the same song from the same position on the other engine.
+  const handOverPlayback = (fromSolo: boolean, positionSeconds: number) => {
+    if (fromSolo) {
+      soloPlayer.stop();
+    } else {
+      try {
+        get().audioPlayer?.sourceNode.stop();
+      } catch {
+        // Already stopped
+      }
+    }
+    set({ isPlaying: false, currentTime: positionSeconds });
+    get().broadcastPlay(positionSeconds);
+  };
+
   // Helper function to manage LRU cache. The queue tracks loaded buffers only,
   // so it cannot grow past the cache limit when the playlist is long.
   const addURLToLRU = (url: string) => {
@@ -634,6 +671,12 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
   // Load audio buffer for a source. Resolves true when the buffer is usable.
   const loadAudioSource = (url: string): Promise<boolean> => {
+    if (isSoloEngine()) {
+      // Solo streams on demand: nothing to download, so tell the server it's ready.
+      notifyAudioLoaded(url);
+      return Promise.resolve(true);
+    }
+
     const inFlight = audioLoadPromises.get(url);
     if (inFlight) return inFlight;
 
@@ -731,7 +774,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
    */
   const prefetchSources = ({ aroundUrl, count = MAX_CACHED_BUFFERS }: { aroundUrl?: string; count?: number }) => {
     const state = get();
-    if (state.audioSources.length === 0) return;
+    if (state.audioSources.length === 0 || isSoloEngine()) return;
 
     const anchorUrl = aroundUrl ?? state.selectedAudioUrl;
     const anchorIndex = anchorUrl ? state.audioSources.findIndex((as) => as.source.url === anchorUrl) : 0;
@@ -769,6 +812,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
   // Eagerly load idle audio sources (skips loading/loaded/error).
   // In demo mode: no cap (load everything). In prod: capped to MAX_CACHED_BUFFERS.
   const eagerLoadIdleSources = ({ skip }: { skip?: string } = {}) => {
+    if (isSoloEngine()) return;
     const state = get();
     let loaded = skip ? 1 : 0;
     for (const as of state.audioSources) {
@@ -797,6 +841,8 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
   /** Stop playback and reset to "Start System" if audio is actively playing. */
   const stopAndResetIfPlaying = (reason: string) => {
+    // iOS suspends the (unused) AudioContext when the screen locks; solo keeps playing via <audio>.
+    if (isSoloEngine()) return;
     const currentState = get();
     if (!currentState.isPlaying || !currentState.audioPlayer) return;
     try {
@@ -857,6 +903,17 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
     console.log("Detected that no audio sources were loaded, initializing");
     initializeAudioExclusively();
+
+    soloPlayer.setCallbacks({
+      onEnded: () => {
+        if (!isSoloEngine()) return;
+        set({ isPlaying: false, currentTime: get().duration });
+        get().skipToNextTrack(true);
+      },
+      onDuration: (seconds) => {
+        if (isSoloEngine()) set({ duration: seconds });
+      },
+    });
 
     // In demo mode, stop audio when the app is backgrounded (camera, swipe down, etc.)
     // iOS 26 with audioSession "playback" keeps audio alive in background, which causes
@@ -930,6 +987,9 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
           console.warn("Failed to resume AudioContext", err);
         }
 
+        // Use this click to unlock the solo <audio> element for later gesture-less plays (iOS).
+        if (useRoomStore.getState().isSolo) soloPlayer.unlock();
+
         const { socket } = getSocket(get());
 
         // Request sync with room (catches up playback state if a track is playing)
@@ -959,7 +1019,9 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       const wasPlaying = state.isPlaying; // Store if was playing *before* stopping
 
       // Stop any current playback immediately when switching tracks
-      if (state.isPlaying && state.audioPlayer) {
+      if (state.isPlaying && isSoloEngine()) {
+        soloPlayer.pause();
+      } else if (state.isPlaying && state.audioPlayer) {
         try {
           state.audioPlayer.sourceNode.stop();
         } catch (e) {
@@ -1036,6 +1098,20 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       // play (autoplay/sync) updates the UI even while the download runs.
       if (data.audioSource !== state.selectedAudioUrl) {
         set({ selectedAudioUrl: data.audioSource });
+      }
+
+      if (isSoloEngine()) {
+        // Usually the server's echo of our own local play: follow it only when it
+        // disagrees (e.g. resuming the session somewhere else after a reconnect).
+        const lateMs = epochNow() + state.offsetEstimate - data.targetServerTime;
+        const position = data.trackTimeSeconds + Math.max(0, lateMs) / 1000;
+        const alreadyPlayingIt =
+          state.isPlaying &&
+          soloPlayer.isPlaying &&
+          state.selectedAudioUrl === data.audioSource &&
+          Math.abs(soloPlayer.currentTime - position) < 2;
+        if (!alreadyPlayingIt) playSolo(data.audioSource, position);
+        return;
       }
 
       if (audioSourceState?.status !== "loaded") {
@@ -1172,6 +1248,10 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     },
 
     schedulePause: ({ targetServerTime }: { targetServerTime: number }) => {
+      if (isSoloEngine()) {
+        pauseSolo();
+        return;
+      }
       const state = get();
       const waitTimeSeconds = getWaitTimeSeconds(state, targetServerTime);
       console.log(`Pausing track in ${waitTimeSeconds}`);
@@ -1204,6 +1284,24 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
         console.warn("Cannot broadcast play: selected source is still preparing");
         return;
       }
+
+      if (isSoloEngine()) {
+        const position = trackTimeSeconds ?? state.getCurrentTrackPosition();
+        // Start right away, inside this click (instant, and allowed by autoplay rules).
+        // The server still records it for auto-queue, backups and anyone who joins.
+        playSolo(audioId, position);
+        sendWSRequest({
+          ws: socket,
+          request: {
+            type: ClientActionEnum.enum.PLAY,
+            trackTimeSeconds: position,
+            audioSource: audioId,
+            sourceLoaded: true,
+          },
+        });
+        return;
+      }
+
       const sourceLoaded = selectedSource?.status === "loaded";
 
       // This call happens inside the user's click gesture: resume a suspended
@@ -1226,6 +1324,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     },
 
     broadcastPause: () => {
+      if (isSoloEngine()) pauseSolo();
       const state = get();
       const { socket } = getSocket(state);
 
@@ -1400,6 +1499,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
     getCurrentTrackPosition: () => {
       const state = get();
+      if (state.isPlaying && isSoloEngine()) return soloPlayer.currentTime;
       const { audioPlayer, isPlaying, currentTime, playbackStartTime, playbackOffset } = state; // Destructure for easier access
 
       if (!isPlaying || !audioPlayer) {
@@ -1598,11 +1698,20 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
       const { didRestoreNudge } = get();
       const shouldRestoreNudge = !didRestoreNudge && currentUser.nudgeMs !== 0;
 
+      // Measured on the engine that is playing now, before the client count changes it.
+      const wasSoloEngine = isSoloEngine();
+      const wasPlaying = get().isPlaying;
+      const positionBefore = get().getCurrentTrackPosition();
+
       set({
         connectedClients: clients,
         currentUser,
         ...(shouldRestoreNudge ? { nudgeOffsetMs: currentUser.nudgeMs, didRestoreNudge: true } : {}),
       });
+
+      if (wasPlaying && wasSoloEngine !== isSoloEngine()) {
+        handOverPlayback(wasSoloEngine, positionBefore);
+      }
     },
 
     skipToNextTrack: (isAutoplay = false) => {
@@ -1726,6 +1835,7 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
 
       // Use singleton's setMasterGain with ramping
       audioContextManager.setMasterGain(finalGain, rampTime);
+      soloPlayer.setVolume(state.globalVolume);
     },
 
     getAudioDuration: ({ url }) => {
@@ -1835,6 +1945,8 @@ export const useGlobalStore = create<GlobalState>((set, get) => {
     // Reset function to clean up state
     resetStore: () => {
       const state = get();
+
+      soloPlayer.stop();
 
       // Stop any playing audio
       if (state.isPlaying && state.audioPlayer) {
