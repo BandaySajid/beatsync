@@ -1,6 +1,7 @@
 "use client";
 
 import { cn } from "@/lib/utils";
+import { useBrowseStore, type SidePanelTab } from "@/store/browse";
 import { Compass, Headphones, Library } from "lucide-react";
 import { motion } from "motion/react";
 import { AudioUploaderMinimal } from "../AudioUploaderMinimal";
@@ -14,6 +15,10 @@ import { YoutubeUrlInput } from "./YoutubeUrlInput";
 
 /** Side panel for a solo session: inviting friends and adding your own music. */
 export const SoloPanel = ({ className }: { className?: string }) => {
+  // In a store so "Go to artist" in any song's menu can switch to Browse.
+  const tab = useBrowseStore((state) => state.tab);
+  const setTab = useBrowseStore((state) => state.setTab);
+
   return (
     <motion.div
       className={cn(
@@ -45,7 +50,7 @@ export const SoloPanel = ({ className }: { className?: string }) => {
       </div>
 
       <Separator className="bg-neutral-800/50 mt-2" />
-      <Tabs defaultValue="library" className="gap-0">
+      <Tabs value={tab} onValueChange={(value) => setTab(value as SidePanelTab)} className="gap-0">
         <TabsList className="mx-3.5 mt-3 w-auto bg-neutral-800/60">
           <TabsTrigger value="library">
             <Library className="size-3.5" /> Library

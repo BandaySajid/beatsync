@@ -95,18 +95,31 @@ export const GetMoodsResponseSchema = z.object({
 });
 export type GetMoodsResponseType = z.infer<typeof GetMoodsResponseSchema>;
 
-export const BrowsePlaylistCardSchema = z.object({
-  id: z.string(), // Playlist ID, as used in ?list=
+// Something to open while browsing: a playlist, an album or an artist
+export const BrowseCardSchema = z.object({
+  kind: z.enum(["playlist", "album", "artist"]),
+  id: z.string(), // Playlist ID (as in ?list=), album browse ID (MPREb_…) or artist channel ID (UC…)
   title: z.string(),
   subtitle: z.string(),
   image: z.string().optional(),
 });
-export type BrowsePlaylistCardType = z.infer<typeof BrowsePlaylistCardSchema>;
+export type BrowseCardType = z.infer<typeof BrowseCardSchema>;
 
-export const GetMoodPlaylistsResponseSchema = z.object({
-  sections: z.array(z.object({ title: z.string(), playlists: z.array(BrowsePlaylistCardSchema) })),
-});
+const BrowseShelfSchema = z.object({ title: z.string(), cards: z.array(BrowseCardSchema) });
+
+export const GetMoodPlaylistsResponseSchema = z.object({ sections: z.array(BrowseShelfSchema) });
 export type GetMoodPlaylistsResponseType = z.infer<typeof GetMoodPlaylistsResponseSchema>;
 
 export const GetBrowsePlaylistResponseSchema = z.object({ name: z.string(), tracks: z.array(TrackSchema) });
 export type GetBrowsePlaylistResponseType = z.infer<typeof GetBrowsePlaylistResponseSchema>;
+
+export const GetArtistResponseSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  image: z.string().optional(),
+  description: z.string().optional(),
+  songs: z.array(TrackSchema), // Top songs
+  allSongsPlaylistId: z.string().optional(), // Playlist of all their songs, when YouTube Music has one
+  shelves: z.array(BrowseShelfSchema), // Albums, singles, playlists they're on, similar artists
+});
+export type GetArtistResponseType = z.infer<typeof GetArtistResponseSchema>;

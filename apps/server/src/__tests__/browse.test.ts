@@ -37,6 +37,64 @@ describe("YouTube Music browsing", () => {
     expect(refused).toContain("Mixes");
   });
 
+  it("names the real artists of a browsed playlist, not the label that uploaded the songs", async () => {
+    const manager = new YoutubeManager();
+    stubInnertube(manager, {
+      music: {
+        getPlaylist: () =>
+          Promise.resolve({
+            header: { title: { text: "Bollywood Sufi Essentials" } },
+            items: [
+              {
+                id: "6rvUyBiBtik",
+                title: "Tera Mera Rishta",
+                authors: [{ name: "Mustafa Zahid" }, { name: "Pritam" }],
+                duration: { seconds: 372 },
+              },
+            ],
+            has_continuation: false,
+          }),
+      },
+      // The regular playlist page credits the uploading channel.
+      getPlaylist: () =>
+        Promise.resolve({
+          info: { title: "Bollywood Sufi Essentials" },
+          items: [lockup("6rvUyBiBtik", "Tera Mera Rishta", "Sony Music India")],
+          has_continuation: false,
+        }),
+    });
+
+    const { name, tracks } = await manager.getBrowsePlaylist("RDCLAK5uy_kVxH0ivTOBmqTAELKt2mmhDWyEpZyBxJA");
+    expect(name).toBe("Bollywood Sufi Essentials");
+    expect(tracks.map((t) => [t.title, t.performer.name, t.duration])).toEqual([
+      ["Tera Mera Rishta", "Mustafa Zahid", 372],
+    ]);
+  });
+
+  it("finds a song's artist page only when the name really matches", async () => {
+    const manager = new YoutubeManager();
+    const artist = (name: string, id: string) => ({ item_type: "artist", id, name });
+    const search = mock((query: string) =>
+      Promise.resolve({
+        contents: [
+          {
+            is: () => true, // a MusicShelf
+            contents:
+              query === "Sony Music India"
+                ? [artist("Bollywood Instrumentals", "UCaaaaaaaaaaaaaaaaaaaaaa")]
+                : [artist("Jagjit Singh", "UCh1u7At1I9kU2BDncDcYIXQ")],
+          },
+        ],
+      })
+    );
+    stubInnertube(manager, { music: { search } });
+
+    expect(await manager.findArtistId("JAGJIT SINGH - Topic")).toBe("UCh1u7At1I9kU2BDncDcYIXQ");
+    expect(search.mock.calls[0][0]).toBe("JAGJIT SINGH"); // " - Topic" channels are named after the artist
+    // A label's channel: the top search result is some other artist, so no page.
+    expect(await manager.findArtistId("Sony Music India")).toBeNull();
+  });
+
   it("shares one fetch per browse page, but doesn't keep a failed one", async () => {
     const manager = new YoutubeManager();
     const execute = mock()
