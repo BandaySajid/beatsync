@@ -39,6 +39,7 @@ export const ClientActionEnum = z.enum([
   "LIVENESS_PONG", // Liveness reply to a server LIVENESS_PING
   "ADD_YOUTUBE_URL", // Add a YouTube / YouTube Music URL to the room queue
   "SET_AUTO_QUEUE", // Turn auto-queueing of similar songs on/off for the room
+  "IMPORT_PLAYLIST", // Read a YouTube / YouTube Music playlist so the client can save it to its library
 ]);
 
 export const NTPRequestPacketSchema = z.object({
@@ -189,6 +190,11 @@ export const SetAutoQueueSchema = z.object({
   enabled: z.boolean(),
 });
 
+export const ImportPlaylistSchema = z.object({
+  type: z.literal(ClientActionEnum.enum.IMPORT_PLAYLIST),
+  url: z.string().url(),
+});
+
 export const WSRequestSchema = z.discriminatedUnion("type", [
   PlayActionSchema,
   PauseActionSchema,
@@ -216,6 +222,7 @@ export const WSRequestSchema = z.discriminatedUnion("type", [
   LivenessPongSchema,
   AddYoutubeUrlSchema,
   SetAutoQueueSchema,
+  ImportPlaylistSchema,
 ]);
 export type WSRequestType = z.infer<typeof WSRequestSchema>;
 export type PlayActionType = z.infer<typeof PlayActionSchema>;

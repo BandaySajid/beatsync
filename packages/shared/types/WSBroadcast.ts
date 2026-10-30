@@ -20,6 +20,7 @@ export const ServerActionEnum = z.enum([
   "SEARCH_RESPONSE", // Music search results
   "LIVENESS_PING", // Liveness probe; client replies with LIVENESS_PONG
   "SUGGESTIONS", // Songs similar to the last YouTube track added to the room
+  "PLAYLIST_IMPORT_RESPONSE", // A YouTube playlist read for IMPORT_PLAYLIST (unicast)
 ]);
 
 // Client change

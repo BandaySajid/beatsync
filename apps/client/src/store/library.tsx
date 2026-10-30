@@ -29,8 +29,8 @@ interface LibraryState {
   recordPlayed: (track: LibraryTrack) => void;
   saveLastSession: (session: LastSession) => void;
   clearLastSession: () => void;
-  /** Creates a playlist (optionally with a first song) and returns its id. */
-  createPlaylist: (name: string, firstTrack?: LibraryTrack) => string;
+  /** Creates a playlist (optionally with songs) and returns its id. */
+  createPlaylist: (name: string, tracks?: LibraryTrack[]) => string;
   renamePlaylist: (id: string, name: string) => void;
   deletePlaylist: (id: string) => void;
   addToPlaylist: (id: string, track: LibraryTrack) => void;
@@ -61,9 +61,9 @@ export const useLibraryStore = create<LibraryState>()(
             ? state.liked.filter((liked) => liked.id !== track.id)
             : [track, ...state.liked],
         })),
-      createPlaylist: (name, firstTrack) => {
+      createPlaylist: (name, tracks = []) => {
         const id = nanoid();
-        set((state) => ({ playlists: [{ id, name, tracks: firstTrack ? [firstTrack] : [] }, ...state.playlists] }));
+        set((state) => ({ playlists: [{ id, name, tracks }, ...state.playlists] }));
         return id;
       },
       renamePlaylist: (id, name) =>

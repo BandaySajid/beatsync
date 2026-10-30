@@ -5,11 +5,14 @@ import { isTrackQueued, queueLibraryTrack, type LibraryTrack } from "@/lib/libra
 import { cn } from "@/lib/utils";
 import { useGlobalStore } from "@/store/global";
 import { useLibraryStore, type Playlist } from "@/store/library";
+import { sendWSRequest } from "@/utils/ws";
+import { ClientActionEnum } from "@beatsync/shared";
 import {
   ArrowDown,
   ArrowUp,
   Check,
   ChevronRight,
+  Download,
   Heart,
   History,
   ListMusic,
@@ -186,6 +189,51 @@ const PlaylistDetail = ({ playlist }: { playlist: Playlist }) => {
   );
 };
 
+/** Paste a YouTube / YouTube Music playlist link; the server reads it and it becomes a playlist here. */
+const ImportPlaylistForm = ({ onDone }: { onDone: () => void }) => {
+  const [url, setUrl] = useState("");
+
+  return (
+    <form
+      className="flex items-center gap-1 mb-2"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const link = url.trim();
+        if (!/[?&]list=/.test(link)) {
+          toast.error("Paste a YouTube or YouTube Music playlist link (it contains list=)");
+          return;
+        }
+        const socket = useGlobalStore.getState().socket;
+        if (
+          !socket ||
+          !sendWSRequest({ ws: socket, request: { type: ClientActionEnum.enum.IMPORT_PLAYLIST, url: link } })
+        ) {
+          toast.error("Not connected to server");
+          return;
+        }
+        // Finished by the PLAYLIST_IMPORT_RESPONSE handler, which uses the same id.
+        toast.loading("Importing playlist…", { id: link });
+        onDone();
+      }}
+    >
+      <input
+        autoFocus
+        aria-label="Playlist link"
+        placeholder="Paste a YouTube playlist link"
+        value={url}
+        onChange={(e) => setUrl(e.target.value)}
+        className="flex-1 min-w-0 bg-neutral-800 rounded px-2 py-1 text-sm text-white outline-none focus:ring-1 focus:ring-neutral-600"
+      />
+      <button
+        type="submit"
+        className="text-[10px] font-mono px-2 py-1 rounded text-neutral-300 bg-neutral-800 hover:bg-neutral-700 cursor-pointer"
+      >
+        import
+      </button>
+    </form>
+  );
+};
+
 const SectionHeader = ({ icon, title, action }: { icon: ReactNode; title: string; action?: ReactNode }) => (
   <div className="flex items-center justify-between mb-2">
     <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500 flex items-center gap-1.5">
@@ -203,6 +251,7 @@ export const LibraryPanel = () => {
   const history = useLibraryStore((state) => state.history);
   const createPlaylist = useLibraryStore((state) => state.createPlaylist);
   const [openPlaylistId, setOpenPlaylistId] = useState<string | null>(null);
+  const [showImport, setShowImport] = useState(false);
   useGlobalStore((state) => state.audioSources); // re-render the "in queue" marks when the queue changes
 
   return (
@@ -242,14 +291,20 @@ export const LibraryPanel = () => {
           icon={<ListMusic className="size-3" />}
           title={`Playlists · ${playlists.length}`}
           action={
-            <SmallButton
-              label="New playlist"
-              onClick={() => setOpenPlaylistId(createPlaylist(`My playlist #${playlists.length + 1}`))}
-            >
-              <Plus className="size-3" /> new
-            </SmallButton>
+            <div className="flex items-center gap-1">
+              <SmallButton label="Import a YouTube playlist" onClick={() => setShowImport(!showImport)}>
+                <Download className="size-3" /> import
+              </SmallButton>
+              <SmallButton
+                label="New playlist"
+                onClick={() => setOpenPlaylistId(createPlaylist(`My playlist #${playlists.length + 1}`))}
+              >
+                <Plus className="size-3" /> new
+              </SmallButton>
+            </div>
           }
         />
+        {showImport && <ImportPlaylistForm onDone={() => setShowImport(false)} />}
         {playlists.length === 0 ? (
           <p className="text-xs text-neutral-500">Create a playlist, or use the playlist button next to any song.</p>
         ) : (
