@@ -1,6 +1,7 @@
 import React from "react";
-import { clearUpcoming, saveQueueAsPlaylist } from "@/lib/queueActions";
+import { clearUpcoming, saveQueueAsPlaylist, smartShuffle } from "@/lib/queueActions";
 import { cn } from "@/lib/utils";
+import { Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useCanMutate, useGlobalStore } from "@/store/global";
 import { AnimatePresence, motion } from "motion/react";
@@ -23,6 +24,7 @@ export const Queue = ({ className, ...rest }: React.ComponentProps<"div">) => {
   const isInitingSystem = useGlobalStore((state) => state.isInitingSystem);
   const broadcastReorder = useGlobalStore((state) => state.broadcastReorder);
   const canMutate = useCanMutate();
+  const [isSmartShuffling, setIsSmartShuffling] = React.useState(false);
   // socket handled by child button component when needed
 
   const sensors = useSensors(
@@ -65,6 +67,20 @@ export const Queue = ({ className, ...rest }: React.ComponentProps<"div">) => {
           >
             save as playlist
           </button>
+          {canMutate && (
+            <button
+              type="button"
+              title="Shuffle what's coming up and mix in songs like the one playing"
+              disabled={isSmartShuffling}
+              onClick={() => {
+                setIsSmartShuffling(true);
+                void smartShuffle().finally(() => setIsSmartShuffling(false));
+              }}
+              className="text-[10px] font-mono px-2 py-0.5 rounded text-neutral-300 bg-neutral-800 hover:bg-neutral-700 cursor-pointer disabled:opacity-50 disabled:cursor-wait flex items-center gap-1"
+            >
+              <Sparkles className="size-3" /> {isSmartShuffling ? "mixing…" : "smart shuffle"}
+            </button>
+          )}
           {canMutate && audioSources.length > 1 && (
             <button
               type="button"

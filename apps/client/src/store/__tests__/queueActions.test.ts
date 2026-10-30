@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import type { LibraryTrack } from "@/lib/libraryTrack";
-import { clearUpcoming, orderWithNext, playNext, saveQueueAsPlaylist } from "@/lib/queueActions";
+import type { fetchRadio } from "@/lib/api";
+import {
+  clearUpcoming,
+  orderWithNext,
+  playNext,
+  saveQueueAsPlaylist,
+  smartShuffle,
+  smartShuffleOrder,
+} from "@/lib/queueActions";
 import { useGlobalStore } from "@/store/global";
 import { useLibraryStore } from "@/store/library";
 
@@ -51,6 +59,60 @@ describe("queue actions", () => {
     useGlobalStore.setState({ audioSources: [A, B, C, placeholder].map(asState) });
     // Moved right after A, and keeps its `preparing` flag.
     expect(reorder).toHaveBeenCalledWith([A, placeholder, B, C]);
+  });
+
+  it("smart shuffle keeps what already played, shuffles the rest and slots a recommendation after every 3", () => {
+    const [P, Q, R, S, T, U, V] = [
+      "ppppppppppp",
+      "qqqqqqqqqqq",
+      "rrrrrrrrrrr",
+      "sssssssssss",
+      "ttttttttttt",
+      "uuuuuuuuuuu",
+      "vvvvvvvvvvv",
+    ].map((id) => src(id));
+    const rec1 = src("11111111111");
+    const rec2 = src("22222222222");
+    const order = smartShuffleOrder(
+      [A, B, P, Q, R, S, T, U, rec1, rec2, V],
+      B.url,
+      new Set([rec1.url, rec2.url]),
+      () => 0
+    );
+
+    expect(order.slice(0, 2)).toEqual([A, B]); // played + current stay put
+    expect(order).toHaveLength(11);
+    expect(new Set(order.map((s) => s.url)).size).toBe(11); // nothing lost or doubled
+    expect([order[5], order[9]]).toEqual([rec1, rec2]); // after the 3rd and 6th of yours
+  });
+
+  it("smart shuffle adds recommendations from the playing song's radio, then reorders once they arrive", async () => {
+    const reorder = spyOn(useGlobalStore.getState(), "broadcastReorder").mockImplementation(() => undefined);
+    const radio = (id: string) => ({
+      id,
+      title: `Rec ${id}`,
+      performer: { name: "Someone" },
+      album: { image: { thumbnail: "" } },
+    });
+    const getRadio = mock(() =>
+      // B is already queued, so it's skipped; 2 upcoming songs -> 1 recommendation
+      Promise.resolve({ tracks: [radio("bbbbbbbbbbb"), radio("eeeeeeeeeee"), radio("fffffffffff")] })
+    ) as unknown as typeof fetchRadio;
+
+    const done = smartShuffle({ getRadio, random: () => 0.99 });
+    await Bun.sleep(0);
+    expect(getRadio).toHaveBeenCalledWith("aaaaaaaaaaa");
+    expect(sent().map((m) => m.trackId)).toEqual(["eeeeeeeeeee"]);
+    expect(reorder).not.toHaveBeenCalled(); // waits for the new song to show up
+
+    const placeholder = src("eeeeeeeeeee", true);
+    useGlobalStore.setState({ audioSources: [A, B, C, placeholder].map(asState) });
+    await done;
+    expect(reorder).toHaveBeenCalledTimes(1);
+    const [newOrder] = reorder.mock.calls[0] as [ReturnType<typeof src>[]];
+    expect(newOrder[0]).toEqual(A);
+    expect(newOrder).toContainEqual(placeholder); // keeps its `preparing` flag
+    expect(newOrder).toHaveLength(4);
   });
 
   it("clears everything except the current song, and saves the queue as a playlist", () => {
