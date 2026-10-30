@@ -79,6 +79,57 @@ const RANGE_LIMIT_STATUSES = new Set([403, 410, 416]);
 const MAX_TITLE_LENGTH = 120;
 const VIDEO_ID_PATTERN = /^[A-Za-z0-9_-]{11}$/;
 const MAX_SUGGESTIONS = 10;
+const PLAYLIST_ID_PATTERN = /^[A-Za-z0-9_-]{10,64}$/;
+// Saved on the client in localStorage; also bounds how many pages we fetch.
+const MAX_PLAYLIST_TRACKS = 200;
+
+/** "3:55" / "1:02:03" -> seconds (0 if unknown). */
+const parseClockDuration = (text: string | undefined): number =>
+  text && /^\d+(:\d{2}){1,2}$/.test(text) ? text.split(":").reduce((total, part) => total * 60 + Number(part), 0) : 0;
+
+/**
+ * One playlist entry as a track. Current YouTube returns LockupView nodes (title,
+ * channel and a "3:55" badge nested inside); older responses used PlaylistVideo.
+ */
+const playlistItemToTrack = (item: unknown): TrackType | null => {
+  const record = asRecord(item);
+  if (!record) return null;
+
+  if (record.type === "LockupView") {
+    const id = record.content_id;
+    if (record.content_type !== "VIDEO" || typeof id !== "string" || !VIDEO_ID_PATTERN.test(id)) return null;
+    const metadata = asRecord(record.metadata);
+    const rows = asRecord(metadata?.metadata)?.metadata_rows;
+    const parts = Array.isArray(rows) ? asRecord(rows[0])?.metadata_parts : undefined;
+    const channel = Array.isArray(parts) ? readText(asRecord(parts[0])?.text, "text") : undefined;
+    const overlays = asRecord(record.content_image)?.overlays;
+    const badge = Array.isArray(overlays)
+      ? overlays
+          .flatMap((overlay) => {
+            const badges = asRecord(overlay)?.badges;
+            return Array.isArray(badges) ? (badges as unknown[]) : [];
+          })
+          .map((badgeItem) => readText(asRecord(badgeItem)?.text, "text"))
+          .find((text) => text && /^\d+(:\d{2}){1,2}$/.test(text))
+      : undefined;
+    return toYoutubeTrack(
+      id,
+      readText(metadata?.title, "text") ?? "YouTube Track",
+      channel ?? "YouTube",
+      parseClockDuration(badge)
+    );
+  }
+
+  const id = record.id;
+  if (typeof id !== "string" || !VIDEO_ID_PATTERN.test(id)) return null;
+  const seconds = asRecord(record.duration)?.seconds;
+  return toYoutubeTrack(
+    id,
+    readText(record.title, "text") ?? "YouTube Track",
+    readText(record.author, "name") ?? "YouTube",
+    typeof seconds === "number" ? seconds : 0
+  );
+};
 // Each prewarm can spawn a yt-dlp process, so keep this small.
 const PREWARM_COUNT = 3;
 const MAX_PARALLEL_CACHE_CHUNKS = 6;
@@ -352,6 +403,13 @@ export class YoutubeManager {
     } catch {
       return false;
     }
+  }
+
+  /** The playlist ID in a YouTube / YouTube Music link (…?list=…), or null. */
+  static getPlaylistId(url: string): string | null {
+    if (!YoutubeManager.isYoutubeUrl(url)) return null;
+    const list = new URL(url).searchParams.get("list");
+    return list && PLAYLIST_ID_PATTERN.test(list) ? list : null;
   }
 
   static getVideoId(url: string): string | null {
@@ -1043,6 +1101,27 @@ export class YoutubeManager {
    * YouTube Music's radio for a video: more from the same artist plus songs with a similar
    * mood and genre (a ghazal leads to more ghazals). Excludes the seed video itself.
    */
+  /** A playlist's name and (up to MAX_PLAYLIST_TRACKS) songs, following continuation pages. */
+  async getPlaylist(playlistId: string): Promise<{ name: string; tracks: TrackType[] }> {
+    // YouTube Mixes are generated per viewer and can't be fetched as a playlist.
+    if (playlistId.startsWith("RD"))
+      throw new Error("YouTube Mixes can't be imported; open a regular playlist instead");
+    const yt = await this.getInnertube();
+    let page = await yt.getPlaylist(playlistId);
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty title must fall back too
+    const name = page.info.title?.trim() || "Imported playlist";
+    const tracks: TrackType[] = [];
+    for (;;) {
+      for (const item of page.items) {
+        const track = playlistItemToTrack(item);
+        if (track) tracks.push(track);
+      }
+      if (tracks.length >= MAX_PLAYLIST_TRACKS || !page.has_continuation) break;
+      page = await page.getContinuation();
+    }
+    return { name, tracks: tracks.slice(0, MAX_PLAYLIST_TRACKS) };
+  }
+
   async getSuggestions(videoId: string): Promise<TrackType[]> {
     const yt = await this.getInnertube();
     const panel = await yt.music.getUpNext(videoId, true);

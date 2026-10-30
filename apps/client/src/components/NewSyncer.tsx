@@ -1,6 +1,8 @@
 "use client";
 import { generateName } from "@/lib/randomNames";
 import { useDocumentTitle } from "@/hooks/useDocumentTitle";
+import { useListeningHistory } from "@/hooks/useListeningHistory";
+import { useMediaSession } from "@/hooks/useMediaSession";
 import { useGlobalStore } from "@/store/global";
 import { useRoomStore } from "@/store/room";
 import { motion } from "motion/react";
@@ -32,6 +34,10 @@ export const NewSyncer = ({ roomId }: NewSyncerProps) => {
 
   // Update document title based on playback state
   useDocumentTitle();
+  // Lock screen / notification / headphone controls
+  useMediaSession();
+  // Recently played + "Continue listening"
+  useListeningHistory();
 
   // Keep the same display name across refreshes; clientId already persists, so
   // the server restores the same room member either way.

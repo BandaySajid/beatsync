@@ -1,6 +1,8 @@
 "use client";
 
+import { TrackSaveActions } from "@/components/TrackSaveActions";
 import { Button } from "@/components/ui/button";
+import { trackFromSearchResult } from "@/lib/libraryTrack";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { cn } from "@/lib/utils";
 import { useGlobalStore } from "@/store/global";
@@ -354,6 +356,8 @@ export function SearchResults({ className, onTrackSelect }: SearchResultsProps) 
                 </h4>
                 <p className="text-xs text-neutral-400 truncate">{track.performer.name}</p>
               </div>
+
+              <TrackSaveActions track={trackFromSearchResult(track)} />
 
               {/* Duration */}
               <div className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">
