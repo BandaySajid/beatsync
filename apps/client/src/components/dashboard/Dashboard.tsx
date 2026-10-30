@@ -1,8 +1,10 @@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsSoloLayout } from "@/hooks/useIsSoloLayout";
+import { useBrowseStore } from "@/store/browse";
 import { useGlobalStore } from "@/store/global";
 import { Headphones, Library, ListMusic, PartyPopper } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useState } from "react";
 import { TopBar } from "../room/TopBar";
 import { SyncProgress } from "../ui/SyncProgress";
 import { BeatFlash } from "./BeatFlash";
@@ -22,6 +24,14 @@ export const Dashboard = ({ roomId }: DashboardProps) => {
   const hasUserStartedSystem = useGlobalStore((state) => state.hasUserStartedSystem);
   const reconnectionInfo = useGlobalStore((state) => state.reconnectionInfo);
   const isSoloLayout = useIsSoloLayout();
+  const [mobileSoloTab, setMobileSoloTab] = useState("music");
+  // On phones the panel is its own tab: switch to it when Home opens a page there.
+  const showCount = useBrowseStore((state) => state.showCount);
+  const [seenShowCount, setSeenShowCount] = useState(showCount);
+  if (showCount !== seenShowCount) {
+    setSeenShowCount(showCount);
+    setMobileSoloTab("solo");
+  }
 
   const isReady = isSynced && !isLoadingAudio;
   // Transient disconnects keep isSynced (and therefore playback/UI) intact and
@@ -77,7 +87,11 @@ export const Dashboard = ({ roomId }: DashboardProps) => {
           {/* --- MOBILE SOLO LAYOUT (< lg) --- */}
           {isSoloLayout && (
             <div className="flex flex-1 flex-col lg:hidden min-h-0">
-              <Tabs defaultValue="music" className="flex-1 flex flex-col overflow-hidden min-h-0">
+              <Tabs
+                value={mobileSoloTab}
+                onValueChange={setMobileSoloTab}
+                className="flex-1 flex flex-col overflow-hidden min-h-0"
+              >
                 <TabsList className="shrink-0 grid w-full grid-cols-2 h-12 rounded-none p-0 bg-gradient-to-r from-neutral-950 via-neutral-900 to-neutral-950">
                   <TabsTrigger
                     value="music"

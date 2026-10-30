@@ -19,6 +19,7 @@ const MAX_HISTORY = 30;
 interface BrowseState {
   tab: SidePanelTab;
   stack: BrowseView[]; // Last entry is the page shown
+  showCount: number; // Bumped by show(), so the mobile layout can bring the panel into view
   setTab: (tab: SidePanelTab) => void;
   open: (view: BrowseView) => void;
   back: () => void;
@@ -29,11 +30,16 @@ interface BrowseState {
 export const useBrowseStore = create<BrowseState>((set) => ({
   tab: "library",
   stack: [{ kind: "moods" }],
+  showCount: 0,
   setTab: (tab) => set({ tab }),
   open: (view) => set((state) => ({ stack: [state.stack[0], ...state.stack.slice(1).slice(-MAX_HISTORY), view] })),
   back: () => set((state) => ({ stack: state.stack.length > 1 ? state.stack.slice(0, -1) : state.stack })),
   show: (view) =>
-    set((state) => ({ tab: "browse", stack: [state.stack[0], ...state.stack.slice(1).slice(-MAX_HISTORY), view] })),
+    set((state) => ({
+      tab: "browse",
+      stack: [state.stack[0], ...state.stack.slice(1).slice(-MAX_HISTORY), view],
+      showCount: state.showCount + 1,
+    })),
 }));
 
 /** What a page is called, for the back button that returns to it. */
