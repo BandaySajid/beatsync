@@ -1,3 +1,5 @@
+import { LikeButton } from "@/components/LikeButton";
+import { trackFromQueueUrl } from "@/lib/libraryTrack";
 import { cn, extractFileNameFromUrl, formatTime } from "@/lib/utils";
 import { AudioSourceState, useGlobalStore } from "@/store/global";
 import { sendWSRequest } from "@/utils/ws";
@@ -44,6 +46,8 @@ export const QueueSortableItem = ({
   const isPreparing = sourceState.source.preparing === true;
   const isLoading = sourceState.status === "loading" || isPreparing;
   const isError = sourceState.status === "error";
+  // Only YouTube songs can be saved; uploads live in this room only.
+  const libraryTrack = trackFromQueueUrl(sourceState.source.url);
 
   const handleItemClick = (sourceState: AudioSourceState) => {
     if (!canMutate || sourceState.source.preparing) return;
@@ -237,8 +241,9 @@ export const QueueSortableItem = ({
           </div>
         </div>
 
-        {/* Duration & Delete Button */}
+        {/* Like, Duration & Delete Button */}
         <div className="ml-4 flex items-center gap-2">
+          {libraryTrack && <LikeButton track={libraryTrack} />}
           <motion.div
             className="text-xs text-neutral-500 select-none min-w-[3rem] text-right"
             initial={{ opacity: 0, scale: 0.98 }}
