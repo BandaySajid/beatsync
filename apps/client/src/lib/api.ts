@@ -6,6 +6,7 @@ import {
   GetDefaultAudioType,
   GetMoodPlaylistsResponseType,
   GetMoodsResponseType,
+  GetRadioResponseType,
   GetUploadUrlType,
   UploadCompleteResponseType,
   UploadCompleteType,
@@ -128,6 +129,9 @@ export const fetchMoodPlaylists = (params: string) =>
 
 export const fetchBrowsePlaylist = (id: string) =>
   fetchBrowse<GetBrowsePlaylistResponseType>(`/browse/playlist?id=${encodeURIComponent(id)}`);
+
+export const fetchRadio = (videoId: string) =>
+  fetchBrowse<GetRadioResponseType>(`/browse/radio?videoId=${encodeURIComponent(videoId)}`);
 
 export const fetchAlbum = (id: string) =>
   fetchBrowse<GetBrowsePlaylistResponseType>(`/browse/album?id=${encodeURIComponent(id)}`);

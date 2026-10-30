@@ -113,6 +113,10 @@ export type GetMoodPlaylistsResponseType = z.infer<typeof GetMoodPlaylistsRespon
 export const GetBrowsePlaylistResponseSchema = z.object({ name: z.string(), tracks: z.array(TrackSchema) });
 export type GetBrowsePlaylistResponseType = z.infer<typeof GetBrowsePlaylistResponseSchema>;
 
+// A song's YouTube Music radio: similar songs, for radios and daily mixes
+export const GetRadioResponseSchema = z.object({ tracks: z.array(TrackSchema) });
+export type GetRadioResponseType = z.infer<typeof GetRadioResponseSchema>;
+
 export const GetArtistResponseSchema = z.object({
   id: z.string(),
   name: z.string(),

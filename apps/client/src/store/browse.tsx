@@ -6,7 +6,8 @@ export type BrowseView =
   | { kind: "moods" }
   | { kind: "mood"; category: MoodCategoryType }
   | { kind: "card"; card: BrowseCardType } // a playlist, album or artist
-  | { kind: "artistByName"; name: string }; // from a song, which only knows its artist's name
+  | { kind: "artistByName"; name: string } // from a song, which only knows its artist's name
+  | { kind: "mix"; index: number; title: string }; // one of today's daily mixes
 
 export type SidePanelTab = "library" | "browse";
 
@@ -47,5 +48,7 @@ export const browseViewTitle = (view: BrowseView): string => {
       return view.card.title;
     case "artistByName":
       return view.name;
+    case "mix":
+      return view.title;
   }
 };

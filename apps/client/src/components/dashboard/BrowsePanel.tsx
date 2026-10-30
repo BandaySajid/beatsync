@@ -1,7 +1,8 @@
 "use client";
 
+import { mixArtists, useDailyMixes } from "@/hooks/useDailyMixes";
 import { fetchAlbum, fetchArtist, fetchBrowsePlaylist, fetchMoodPlaylists, fetchMoods } from "@/lib/api";
-import { trackFromSearchResult } from "@/lib/libraryTrack";
+import { trackFromSearchResult, type LibraryTrack } from "@/lib/libraryTrack";
 import { cn } from "@/lib/utils";
 import { browseViewTitle, useBrowseStore } from "@/store/browse";
 import { useGlobalStore } from "@/store/global";
@@ -92,11 +93,11 @@ const MoodsView = () => {
     queryFn: fetchMoods,
     staleTime: BROWSE_STALE_MS,
   });
-  if (!data) return <QueryState isError={isError} refetch={() => void refetch()} />;
-
   return (
     <div className="space-y-4">
-      {data.sections.map((section) => (
+      <MadeForYou />
+      {!data && <QueryState isError={isError} refetch={() => void refetch()} />}
+      {data?.sections.map((section) => (
         <section key={section.title}>
           <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500 mb-2">{section.title}</h3>
           <div className="flex flex-wrap gap-1.5">
@@ -136,30 +137,36 @@ const MoodView = ({ category }: { category: MoodCategoryType }) => {
   );
 };
 
-/** The songs of a playlist or album, with add all / shuffle / save. */
-const TrackListView = ({ card }: { card: BrowseCardType }) => {
+/** A list of songs with add all / shuffle / save, under a cover and title. */
+const TrackList = ({
+  name,
+  image,
+  subtitle,
+  tracks,
+  isError,
+  refetch,
+}: {
+  name: string;
+  image?: string;
+  subtitle: string;
+  tracks: LibraryTrack[] | null; // null while loading
+  isError: boolean;
+  refetch: () => void;
+}) => {
   const createPlaylist = useLibraryStore((state) => state.createPlaylist);
   useGlobalStore((state) => state.audioSources); // re-render the "in queue" marks when the queue changes
-  const { data, isError, refetch } = useQuery({
-    queryKey: ["browse", card.kind, card.id],
-    queryFn: () => (card.kind === "album" ? fetchAlbum(card.id) : fetchBrowsePlaylist(card.id)),
-    staleTime: BROWSE_STALE_MS,
-  });
-  const tracks = data?.tracks.map(trackFromSearchResult) ?? [];
-  // Some pages (e.g. an artist's "all songs") have a generic name; keep the one we opened.
-  const name = card.title || data?.name || "Playlist";
 
   return (
     <div>
       <div className="flex items-center gap-3 mb-3">
-        <Thumb src={card.image} className="w-16 h-16 rounded flex-shrink-0" />
+        <Thumb src={image} className="w-16 h-16 rounded flex-shrink-0" />
         <div className="min-w-0">
           <h2 className="text-sm font-medium text-white line-clamp-2">{name}</h2>
-          <p className="text-xs text-neutral-500 truncate">{data ? `${tracks.length} songs` : card.subtitle}</p>
+          <p className="text-xs text-neutral-500 line-clamp-2">{tracks ? `${tracks.length} songs` : subtitle}</p>
         </div>
       </div>
-      {!data ? (
-        <QueryState isError={isError} refetch={() => void refetch()} />
+      {!tracks ? (
+        <QueryState isError={isError} refetch={refetch} />
       ) : (
         <>
           <div className="flex flex-wrap items-center gap-1.5 mb-2">
@@ -183,6 +190,72 @@ const TrackListView = ({ card }: { card: BrowseCardType }) => {
         </>
       )}
     </div>
+  );
+};
+
+/** The songs of a playlist or album. */
+const TrackListView = ({ card }: { card: BrowseCardType }) => {
+  const { data, isError, refetch } = useQuery({
+    queryKey: ["browse", card.kind, card.id],
+    queryFn: () => (card.kind === "album" ? fetchAlbum(card.id) : fetchBrowsePlaylist(card.id)),
+    staleTime: BROWSE_STALE_MS,
+  });
+  return (
+    <TrackList
+      // Some pages (e.g. an artist's "all songs") have a generic name; keep the one we opened.
+      name={card.title || data?.name || "Playlist"}
+      image={card.image}
+      subtitle={card.subtitle}
+      tracks={data?.tracks.map(trackFromSearchResult) ?? null}
+      isError={isError}
+      refetch={() => void refetch()}
+    />
+  );
+};
+
+const MixView = ({ index }: { index: number }) => {
+  const mix = useDailyMixes()[index];
+  if (!mix) return <QueryState isError={false} refetch={() => undefined} />;
+  return (
+    <TrackList
+      name={mix.title}
+      image={mix.seed.seed.image}
+      subtitle={mixArtists(mix)}
+      tracks={mix.tracks}
+      isError={mix.isError}
+      refetch={mix.refetch}
+    />
+  );
+};
+
+/** Today's daily mixes, from the artists you like and play most. */
+const MadeForYou = () => {
+  const open = useBrowseStore((state) => state.open);
+  const mixes = useDailyMixes();
+  if (mixes.length === 0) return null;
+
+  return (
+    <section>
+      <h3 className="text-xs font-medium uppercase tracking-wide text-neutral-500 mb-2">Made for you</h3>
+      <div className="flex gap-2 overflow-x-auto pb-1.5 -mx-1 px-1 [scrollbar-width:thin] [scrollbar-color:#404040_transparent]">
+        {mixes.map((mix, index) => (
+          <button
+            key={mix.title}
+            type="button"
+            onClick={() => open({ kind: "mix", index, title: mix.title })}
+            className="w-24 flex-shrink-0 text-left cursor-pointer group"
+          >
+            <div className="relative">
+              <Thumb src={mix.seed.seed.image} className="w-24 h-24 rounded group-hover:opacity-80" />
+              <span className="absolute bottom-1 left-1 right-1 text-[10px] font-semibold text-white bg-black/60 rounded px-1 truncate">
+                {mix.title}
+              </span>
+            </div>
+            <p className="mt-1 text-xs text-neutral-300 line-clamp-2">{mixArtists(mix)}</p>
+          </button>
+        ))}
+      </div>
+    </section>
   );
 };
 
@@ -281,6 +354,7 @@ export const BrowsePanel = () => {
       {view.kind === "moods" && <MoodsView />}
       {view.kind === "mood" && <MoodView category={view.category} />}
       {view.kind === "artistByName" && <ArtistView artist={{ name: view.name }} />}
+      {view.kind === "mix" && <MixView index={view.index} />}
       {view.kind === "card" &&
         (view.card.kind === "artist" ? (
           <ArtistView artist={{ id: view.card.id }} />
