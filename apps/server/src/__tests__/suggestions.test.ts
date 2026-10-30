@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from "bun:test";
 import { mockR2 } from "@/__tests__/mocks/r2";
 import { createMockServer } from "@/__tests__/mocks/websocket";
-import { pickAutoQueueTrack, refreshSuggestions } from "@/lib/suggestions";
+import { pickAutoQueueTrack, refreshSuggestions, setAutoQueue, suggestionsMessage } from "@/lib/suggestions";
 import { globalManager } from "@/managers/GlobalManager";
 import type { RoomManager } from "@/managers/RoomManager";
 import { YOUTUBE_MANAGER } from "@/managers/YoutubeManager";
@@ -32,5 +32,15 @@ describe("auto-queue suggestions", () => {
   it("queues the first unqueued suggestion only when the last track starts", () => {
     expect(pickAutoQueueTrack(room, streamUrl("aaaaaaaaaaa"))).toBeUndefined();
     expect(pickAutoQueueTrack(room, streamUrl("bbbbbbbbbbb"))?.id).toBe("ccccccccccc");
+  });
+
+  it("queues nothing once the room turns auto-queue off", () => {
+    setAutoQueue(room, createMockServer(), false);
+    expect(pickAutoQueueTrack(room, streamUrl("bbbbbbbbbbb"))).toBeUndefined();
+  });
+
+  it("gives late joiners the current suggestions and setting", () => {
+    setAutoQueue(room, createMockServer(), false);
+    expect(suggestionsMessage(room)).toEqual({ type: "SUGGESTIONS", tracks: [track("ccccccccccc")], autoQueue: false });
   });
 });
