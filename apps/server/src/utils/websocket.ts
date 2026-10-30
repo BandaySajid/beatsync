@@ -8,6 +8,7 @@ export interface WSData {
   isAdmin: boolean;
   isCreator: boolean;
   privateRoom: boolean; // Solo session: make the room private if this connection creates it
+  denied: boolean; // Not allowed into this private room (no invite): closed right after opening
 }
 
 export type BunServer = Server<WSData>;

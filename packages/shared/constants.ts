@@ -1,5 +1,8 @@
 export const R2_AUDIO_FILE_NAME_DELIMITER = "___";
 
+// WebSocket close code for "this private (solo) room needs an invite link" (4000-4999 are app-defined).
+export const PRIVATE_ROOM_CLOSE_CODE = 4003;
+
 const STEADY_STATE_INTERVAL_MS = 2500;
 
 // NTP Heartbeat Constants

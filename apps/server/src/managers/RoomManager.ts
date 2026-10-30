@@ -58,6 +58,7 @@ const RoomBackupSchema = z.object({
     .default(LOW_PASS_CONSTANTS.MAX_FREQ),
   playbackState: RoomPlaybackStateSchema,
   isPrivate: z.boolean().default(false),
+  inviteToken: z.string().optional(),
   chat: z
     .object({
       messages: z.array(ChatMessageSchema),
@@ -132,8 +133,10 @@ export class RoomManager {
   private globalVolume = 1.0;
   private lowPassFreq: number = LOW_PASS_CONSTANTS.MAX_FREQ; // Default bypassed (full spectrum)
   private isMetronomeEnabled = false;
-  // Private rooms (solo sessions) are joinable by code/link but never listed in /discover.
+  // Private rooms (solo sessions) are never listed in /discover, and only members and
+  // holders of the invite link (inviteToken) can join.
   private isPrivate = false;
+  private inviteToken?: string;
   // Map of trackId to job status
   private activeStreamJobs = new Map<string, { status: string }>();
   private chatManager: ChatManager;
@@ -1077,12 +1080,23 @@ export class RoomManager {
     return this.clientData.get(clientId);
   }
 
-  setPrivate(): void {
+  /** Make the room private. A restored room passes its saved token so invite links keep working. */
+  setPrivate(inviteToken: string = crypto.randomUUID().replace(/-/g, "")): void {
     this.isPrivate = true;
+    this.inviteToken = inviteToken;
   }
 
   getIsPrivate(): boolean {
     return this.isPrivate;
+  }
+
+  getInviteToken(): string | undefined {
+    return this.inviteToken;
+  }
+
+  /** Whether someone may join: always for public rooms; for private ones, members or a valid invite. */
+  canJoin(clientId: string, inviteToken: string | null): boolean {
+    return !this.isPrivate || this.clientData.has(clientId) || (!!inviteToken && inviteToken === this.inviteToken);
   }
 
   /**
@@ -1098,6 +1112,7 @@ export class RoomManager {
       lowPassFreq: this.lowPassFreq,
       playbackState: this.playbackState,
       isPrivate: this.isPrivate,
+      inviteToken: this.inviteToken,
       chat: {
         messages: this.chatManager.getFullHistory(),
         nextMessageId: this.chatManager.getNextMessageId(),

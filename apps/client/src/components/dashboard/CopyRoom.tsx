@@ -15,12 +15,15 @@ export const RoomQRCode = () => {
   const [copied, setCopied] = useState(false);
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>("");
   const roomId = useRoomStore((state) => state.roomId);
+  const inviteToken = useRoomStore((state) => state.inviteToken);
   const roomUrl = (() => {
     if (typeof window === "undefined") return "";
     const url = new URL(window.location.href);
     url.searchParams.delete("admin");
     // Invited friends join the room as normal members, not as another solo session.
     url.searchParams.delete("solo");
+    // Private (solo) rooms only let in people who have this token.
+    if (inviteToken) url.searchParams.set("invite", inviteToken);
     return url.toString();
   })();
 

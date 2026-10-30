@@ -7,6 +7,8 @@ interface RoomStateValues {
   username: string;
   isLoadingRoom: boolean;
   isSolo: boolean; // Started via "Listen solo" (?solo=1): private room with a personal layout
+  inviteToken: string | null; // Private rooms: shared in the invite link so friends can join
+  accessDenied: boolean; // The server refused this private room (no invite)
 }
 
 interface RoomState extends RoomStateValues {
@@ -23,6 +25,8 @@ const initialState: RoomStateValues = {
   username: "",
   isLoadingRoom: false,
   isSolo: false,
+  inviteToken: null,
+  accessDenied: false,
 };
 
 export const useRoomStore = create<RoomState>()((set) => ({
