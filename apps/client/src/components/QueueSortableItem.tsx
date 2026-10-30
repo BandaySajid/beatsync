@@ -1,4 +1,4 @@
-import { LikeButton } from "@/components/LikeButton";
+import { TrackSaveActions } from "@/components/TrackSaveActions";
 import { trackFromQueueUrl } from "@/lib/libraryTrack";
 import { cn, extractFileNameFromUrl, formatTime } from "@/lib/utils";
 import { AudioSourceState, useGlobalStore } from "@/store/global";
@@ -243,7 +243,7 @@ export const QueueSortableItem = ({
 
         {/* Like, Duration & Delete Button */}
         <div className="ml-4 flex items-center gap-2">
-          {libraryTrack && <LikeButton track={libraryTrack} />}
+          {libraryTrack && <TrackSaveActions track={libraryTrack} />}
           <motion.div
             className="text-xs text-neutral-500 select-none min-w-[3rem] text-right"
             initial={{ opacity: 0, scale: 0.98 }}

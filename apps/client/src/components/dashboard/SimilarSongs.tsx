@@ -1,6 +1,6 @@
 "use client";
 
-import { LikeButton } from "@/components/LikeButton";
+import { TrackSaveActions } from "@/components/TrackSaveActions";
 import { queueLibraryTrack, trackFromSearchResult } from "@/lib/libraryTrack";
 import { cn } from "@/lib/utils";
 import { useCanMutate, useGlobalStore } from "@/store/global";
@@ -63,7 +63,7 @@ export const SimilarSongs = ({ className }: { className?: string }) => {
               </div>
               <Plus className="h-3 w-3 text-neutral-500 group-hover:text-white" aria-label="Add to queue" />
             </button>
-            <LikeButton track={trackFromSearchResult(track)} />
+            <TrackSaveActions track={trackFromSearchResult(track)} />
           </div>
         ))}
       </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { LikeButton } from "@/components/LikeButton";
+import { TrackSaveActions } from "@/components/TrackSaveActions";
 import { Button } from "@/components/ui/button";
 import { trackFromSearchResult } from "@/lib/libraryTrack";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -357,7 +357,7 @@ export function SearchResults({ className, onTrackSelect }: SearchResultsProps) 
                 <p className="text-xs text-neutral-400 truncate">{track.performer.name}</p>
               </div>
 
-              <LikeButton track={trackFromSearchResult(track)} />
+              <TrackSaveActions track={trackFromSearchResult(track)} />
 
               {/* Duration */}
               <div className="text-xs text-neutral-500 group-hover:text-neutral-400 transition-colors">
