@@ -1,7 +1,7 @@
 "use client";
 
 import { mixArtists, useDailyMixes } from "@/hooks/useDailyMixes";
-import { fetchAlbum, fetchArtist, fetchBrowsePlaylist, fetchMoodPlaylists, fetchMoods } from "@/lib/api";
+import { fetchAlbum, fetchArtist, fetchBrowsePlaylist, fetchMoodPlaylists, fetchMoods, fetchRadio } from "@/lib/api";
 import { trackFromSearchResult, type LibraryTrack } from "@/lib/libraryTrack";
 import { cn } from "@/lib/utils";
 import { browseViewTitle, useBrowseStore } from "@/store/browse";
@@ -213,6 +213,25 @@ const TrackListView = ({ card }: { card: BrowseCardType }) => {
   );
 };
 
+/** A song and the songs YouTube Music would play after it. */
+const RadioView = ({ track }: { track: LibraryTrack & { id: string } }) => {
+  const { data, isError, refetch } = useQuery({
+    queryKey: ["browse", "radio", track.id],
+    queryFn: () => fetchRadio(track.id),
+    staleTime: BROWSE_STALE_MS,
+  });
+  return (
+    <TrackList
+      name={`${track.title} radio`}
+      image={track.image}
+      subtitle={`Songs like ${track.title} by ${track.artist}`}
+      tracks={data ? [track, ...data.tracks.map(trackFromSearchResult)] : null}
+      isError={isError}
+      refetch={() => void refetch()}
+    />
+  );
+};
+
 const MixView = ({ index }: { index: number }) => {
   const mix = useDailyMixes()[index];
   if (!mix) return <QueryState isError={false} refetch={() => undefined} />;
@@ -355,6 +374,7 @@ export const BrowsePanel = () => {
       {view.kind === "mood" && <MoodView category={view.category} />}
       {view.kind === "artistByName" && <ArtistView artist={{ name: view.name }} />}
       {view.kind === "mix" && <MixView index={view.index} />}
+      {view.kind === "radio" && <RadioView track={view.track} />}
       {view.kind === "card" &&
         (view.card.kind === "artist" ? (
           <ArtistView artist={{ id: view.card.id }} />

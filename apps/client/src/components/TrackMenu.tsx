@@ -14,7 +14,7 @@ import { playNext } from "@/lib/queueActions";
 import { useBrowseStore } from "@/store/browse";
 import { useCanMutate } from "@/store/global";
 import { useLibraryStore } from "@/store/library";
-import { ListStart, MoreHorizontal, Plus, UserRound } from "lucide-react";
+import { ListStart, MoreHorizontal, Plus, Radio, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 /** Per-song menu: play next, and save to one of the on-device playlists (or a new one). */
@@ -24,8 +24,9 @@ export const TrackMenu = ({ track }: { track: LibraryTrack }) => {
   const addToPlaylist = useLibraryStore((state) => state.addToPlaylist);
   // Moving a song in the queue needs the same permission as dragging it.
   const canMutate = useCanMutate();
-  // Artist pages live in the solo panel's Browse tab, and only YouTube songs have one.
-  const canBrowse = useIsSoloLayout() && typeof track.id === "string";
+  // Radios and artist pages live in the solo panel's Browse tab; only YouTube songs have them.
+  const canBrowse = useIsSoloLayout();
+  const youtubeId = typeof track.id === "string" ? track.id : null;
 
   return (
     <DropdownMenu>
@@ -46,12 +47,21 @@ export const TrackMenu = ({ track }: { track: LibraryTrack }) => {
             <ListStart className="size-4" /> Play next
           </DropdownMenuItem>
         )}
-        {canBrowse && (
-          <DropdownMenuItem onSelect={() => useBrowseStore.getState().openArtist(track.artist)}>
-            <UserRound className="size-4" /> Go to artist
-          </DropdownMenuItem>
+        {youtubeId && canBrowse && (
+          <>
+            <DropdownMenuItem
+              onSelect={() => useBrowseStore.getState().show({ kind: "radio", track: { ...track, id: youtubeId } })}
+            >
+              <Radio className="size-4" /> Song radio
+            </DropdownMenuItem>
+            <DropdownMenuItem
+              onSelect={() => useBrowseStore.getState().show({ kind: "artistByName", name: track.artist })}
+            >
+              <UserRound className="size-4" /> Go to artist
+            </DropdownMenuItem>
+          </>
         )}
-        {(canMutate || canBrowse) && <DropdownMenuSeparator />}
+        {(canMutate || (youtubeId && canBrowse)) && <DropdownMenuSeparator />}
         <DropdownMenuLabel className="text-xs text-neutral-500">Add to playlist</DropdownMenuLabel>
         <DropdownMenuItem
           onSelect={() => {
