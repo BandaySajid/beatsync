@@ -1,7 +1,7 @@
 // 1:1 Private WS Responses
 import { z } from "zod";
 import { ScheduledActionSchema, ServerActionEnum } from "./WSBroadcast";
-import { SearchResponseSchema } from "./provider";
+import { SearchResponseSchema, TrackSchema } from "./provider";
 
 const NTPResponseMessageSchema = z.object({
   type: z.literal(ServerActionEnum.enum.NTP_RESPONSE),
@@ -21,6 +21,16 @@ export const MusicSearchResponseSchema = z.object({
 });
 export type MusicSearchResponseType = z.infer<typeof MusicSearchResponseSchema>;
 
+export const PlaylistImportResponseSchema = z.object({
+  type: z.literal(ServerActionEnum.enum.PLAYLIST_IMPORT_RESPONSE),
+  url: z.string(), // The requested playlist URL, to match the response to the request
+  response: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("success"), name: z.string(), tracks: z.array(TrackSchema) }),
+    z.object({ type: z.literal("error"), message: z.string() }),
+  ]),
+});
+export type PlaylistImportResponseType = z.infer<typeof PlaylistImportResponseSchema>;
+
 // Liveness probe sent to clients that have been silent (e.g. backgrounded tabs
 // with throttled timers). Clients reply with a LIVENESS_PONG request.
 const LivenessPingMessageSchema = z.object({
@@ -32,5 +42,6 @@ export const WSUnicastSchema = z.discriminatedUnion("type", [
   ScheduledActionSchema,
   MusicSearchResponseSchema,
   LivenessPingMessageSchema,
+  PlaylistImportResponseSchema,
 ]);
 export type WSUnicastType = z.infer<typeof WSUnicastSchema>;

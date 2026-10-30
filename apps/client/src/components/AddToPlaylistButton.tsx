@@ -37,7 +37,7 @@ export const AddToPlaylistButton = ({ track }: { track: LibraryTrack }) => {
         <DropdownMenuItem
           onSelect={() => {
             const name = `My playlist #${playlists.length + 1}`;
-            createPlaylist(name, track);
+            createPlaylist(name, [track]);
             toast.success(`Added to new playlist "${name}"`);
           }}
         >

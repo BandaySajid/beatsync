@@ -21,6 +21,7 @@ import { handleSetListeningSource } from "@/websocket/handlers/setListeningSourc
 import { handleStartSpatialAudio } from "@/websocket/handlers/startSpatialAudio";
 import { handleStopSpatialAudio } from "@/websocket/handlers/stopSpatialAudio";
 import { handleReorderAudioSources } from "@/websocket/handlers/handleReorderAudioSources";
+import { handleImportPlaylist } from "@/websocket/handlers/handleImportPlaylist";
 import { handleSetAutoQueue } from "@/websocket/handlers/setAutoQueue";
 import { handleSetMetronome } from "@/websocket/handlers/setMetronome";
 import { handleSetLowPassFreq } from "@/websocket/handlers/setLowPassFreq";
@@ -147,5 +148,9 @@ export const WS_REGISTRY: WebsocketRegistry = {
   [ClientActionEnum.enum.SET_AUTO_QUEUE]: {
     handle: handleSetAutoQueue,
     description: "Turn auto-queueing of similar songs on/off for the room",
+  },
+  [ClientActionEnum.enum.IMPORT_PLAYLIST]: {
+    handle: handleImportPlaylist,
+    description: "Read a YouTube playlist so the client can save it to its on-device library",
   },
 };

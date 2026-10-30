@@ -1,5 +1,8 @@
+import { trackFromSearchResult } from "@/lib/libraryTrack";
 import { useChatStore } from "@/store/chat";
 import { useGlobalStore } from "@/store/global";
+import { useLibraryStore } from "@/store/library";
+import { toast } from "sonner";
 import { getProbeStats, handleNTPResponse } from "@/utils/ntp";
 import { sendWSRequest } from "@/utils/ws";
 import { ClientActionEnum, ServerActionEnum, type ExtractWSResponseFrom } from "@beatsync/shared";
@@ -190,5 +193,19 @@ export const WS_RESPONSE_REGISTRY: WebsocketResponseRegistry = {
       useGlobalStore.setState({ suggestions: response.tracks, autoQueue: response.autoQueue });
     },
     description: "Songs similar to the last YouTube track added, and the room's auto-queue setting",
+  },
+
+  [ServerActionEnum.enum.PLAYLIST_IMPORT_RESPONSE]: {
+    handle: ({ response }) => {
+      // The import form shows a loading toast keyed by the URL; finish that same toast.
+      if (response.response.type === "error") {
+        toast.error(response.response.message, { id: response.url });
+        return;
+      }
+      const { name, tracks } = response.response;
+      useLibraryStore.getState().createPlaylist(name, tracks.map(trackFromSearchResult));
+      toast.success(`Imported "${name}" (${tracks.length} songs) into your playlists`, { id: response.url });
+    },
+    description: "A YouTube playlist to save into the on-device library",
   },
 };

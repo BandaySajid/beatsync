@@ -16,7 +16,7 @@ describe("on-device library: playlists", () => {
   it("creates, fills, reorders, renames and deletes a playlist, saved in this browser", () => {
     const { createPlaylist, addToPlaylist, moveInPlaylist, renamePlaylist, removeFromPlaylist, deletePlaylist } =
       useLibraryStore.getState();
-    const id = createPlaylist("Road trip", SONG);
+    const id = createPlaylist("Road trip", [SONG]);
     addToPlaylist(id, OTHER);
     addToPlaylist(id, SONG); // already in it: ignored
     expect(useLibraryStore.getState().playlists[0].tracks.map((t) => t.id)).toEqual([SONG.id, OTHER.id]);
