@@ -9,30 +9,42 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import type { LibraryTrack } from "@/lib/libraryTrack";
+import { playNext } from "@/lib/queueActions";
+import { useCanMutate } from "@/store/global";
 import { useLibraryStore } from "@/store/library";
-import { ListPlus, Plus } from "lucide-react";
+import { ListStart, MoreHorizontal, Plus } from "lucide-react";
 import { toast } from "sonner";
 
-/** Menu that saves a song to one of the on-device playlists, or to a new one. */
-export const AddToPlaylistButton = ({ track }: { track: LibraryTrack }) => {
+/** Per-song menu: play next, and save to one of the on-device playlists (or a new one). */
+export const TrackMenu = ({ track }: { track: LibraryTrack }) => {
   const playlists = useLibraryStore((state) => state.playlists);
   const createPlaylist = useLibraryStore((state) => state.createPlaylist);
   const addToPlaylist = useLibraryStore((state) => state.addToPlaylist);
+  // Moving a song in the queue needs the same permission as dragging it.
+  const canMutate = useCanMutate();
 
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="Add to playlist"
+          aria-label="More options"
           onClick={(e) => e.stopPropagation()} // rows add/play on click
           onPointerDown={(e) => e.stopPropagation()} // don't start a queue drag
           className="p-1 rounded-full text-neutral-500 hover:text-white transition-colors cursor-pointer focus:outline-none"
         >
-          <ListPlus className="size-4" />
+          <MoreHorizontal className="size-4" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" onClick={(e) => e.stopPropagation()}>
+        {canMutate && (
+          <>
+            <DropdownMenuItem onSelect={() => playNext(track)}>
+              <ListStart className="size-4" /> Play next
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+          </>
+        )}
         <DropdownMenuLabel className="text-xs text-neutral-500">Add to playlist</DropdownMenuLabel>
         <DropdownMenuItem
           onSelect={() => {

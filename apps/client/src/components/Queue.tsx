@@ -1,5 +1,7 @@
 import React from "react";
+import { clearUpcoming, saveQueueAsPlaylist } from "@/lib/queueActions";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 import { useCanMutate, useGlobalStore } from "@/store/global";
 import { AnimatePresence, motion } from "motion/react";
 import LoadDefaultTracksButton from "./LoadDefaultTracksButton";
@@ -50,6 +52,33 @@ export const Queue = ({ className, ...rest }: React.ComponentProps<"div">) => {
   return (
     <div className={cn("", className)} {...rest}>
       {/* <h2 className="text-xl font-bold mb-2 select-none">Beatsync</h2> */}
+      {audioSources.length > 0 && (
+        <div className="flex items-center justify-end gap-1.5 mb-1">
+          <button
+            type="button"
+            onClick={() => {
+              const saved = saveQueueAsPlaylist();
+              if (saved > 0) toast.success(`Saved ${saved} song${saved === 1 ? "" : "s"} as a playlist`);
+              else toast.info("Only YouTube songs can be saved to a playlist");
+            }}
+            className="text-[10px] font-mono px-2 py-0.5 rounded text-neutral-300 bg-neutral-800 hover:bg-neutral-700 cursor-pointer"
+          >
+            save as playlist
+          </button>
+          {canMutate && audioSources.length > 1 && (
+            <button
+              type="button"
+              title="Remove everything except the current song"
+              onClick={() => {
+                if (window.confirm("Clear the queue? The current song stays.")) clearUpcoming();
+              }}
+              className="text-[10px] font-mono px-2 py-0.5 rounded text-neutral-300 bg-neutral-800 hover:bg-neutral-700 cursor-pointer"
+            >
+              clear
+            </button>
+          )}
+        </div>
+      )}
       <div className="space-y-1">
         {audioSources.length > 0 ? (
           canMutate ? (
