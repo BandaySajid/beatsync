@@ -6,6 +6,7 @@ import {
   generateAudioFileName,
   generatePresignedUploadUrl,
   getPublicAudioUrl,
+  getPublicUrlForKey,
   validateR2Config,
 } from "@/lib/r2";
 import { globalManager } from "@/managers";
@@ -82,6 +83,12 @@ export const handleUploadComplete = async (req: Request, server: BunServer) => {
     const room = globalManager.getRoom(roomId);
     if (!room) {
       return errorResponse("Room not found. The room may have been closed during upload.", 404);
+    }
+
+    // Only files uploaded to this room's own R2 folder; otherwise anyone could push an
+    // arbitrary URL into every client's queue.
+    if (!publicUrl.startsWith(getPublicUrlForKey(`room-${roomId}/`))) {
+      return errorResponse("Upload URL does not belong to this room", 400);
     }
 
     const sources = room.addAudioSource({ url: publicUrl });

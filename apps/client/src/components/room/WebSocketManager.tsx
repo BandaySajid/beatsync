@@ -2,6 +2,7 @@
 import { useClientId } from "@/hooks/useClientId";
 import { useNtpHeartbeat } from "@/hooks/useNtpHeartbeat";
 import { useWebSocketReconnection } from "@/hooks/useWebSocketReconnection";
+import { getClientSecret } from "@/lib/clientId";
 import { IS_DEMO_MODE } from "@/lib/demo";
 import { getUserLocation } from "@/lib/ip";
 import { getWsUrl } from "@/lib/urls";
@@ -65,8 +66,8 @@ export const WebSocketManager = ({ roomId, username }: WebSocketManagerProps) =>
       return previous;
     }
 
-    const SOCKET_URL = `${getWsUrl()}?roomId=${roomId}&username=${username}&clientId=${clientId}${adminParam}${creatorParam}`;
-    console.log("Creating new WS connection to", SOCKET_URL);
+    const SOCKET_URL = `${getWsUrl()}?roomId=${roomId}&username=${username}&clientId=${clientId}&clientSecret=${getClientSecret()}${adminParam}${creatorParam}`;
+    console.log("Creating new WS connection to", SOCKET_URL.replace(/clientSecret=[^&]*/, "clientSecret=***"));
 
     // Clear previous connection if it exists
     if (previous) {

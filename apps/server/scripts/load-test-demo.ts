@@ -251,6 +251,7 @@ function createClient(index: number): Promise<SimulatedClient> {
       roomId: ROOM_ID,
       username,
       clientId,
+      clientSecret: `loadtest-secret-${clientId}`,
     });
     if (ADMIN_SECRET) {
       params.set("admin", ADMIN_SECRET);

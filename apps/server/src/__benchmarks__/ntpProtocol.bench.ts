@@ -89,7 +89,7 @@ async function runClient(data: {
   const { port, clientId, roomId, numMeasurements, delayBetweenMs } = data;
   const measurements: NTPMeasurement[] = [];
 
-  const wsUrl = `ws://127.0.0.1:${port}/ws?roomId=${roomId}&username=bench-${clientId}&clientId=${clientId}`;
+  const wsUrl = `ws://127.0.0.1:${port}/ws?roomId=${roomId}&username=bench-${clientId}&clientId=${clientId}&clientSecret=bench-${clientId}`;
 
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(wsUrl);

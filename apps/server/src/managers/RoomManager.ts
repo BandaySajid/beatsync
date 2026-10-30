@@ -108,6 +108,9 @@ export class RoomManager {
 
   private clientData = new Map<string, ClientDataType>(); // map of clientId -> client data
   private wsConnections = new Map<string, ServerWebSocket<WSData>>(); // map of clientId -> ws
+  // clientId -> secret. Kept out of clientData, which is broadcast to the whole room.
+  // shortcut: not backed up, so after a restart the first reconnect per clientId claims it.
+  private clientSecrets = new Map<string, string>();
   private audioSources: AudioSourceType[] = [];
   private listeningSource: PositionType = {
     x: GRID.ORIGIN_X,
@@ -367,6 +370,12 @@ export class RoomManager {
     return this.playbackState;
   }
 
+  /** Whether `secret` may connect as `clientId`: unknown IDs are free, known ones need their secret. */
+  isClientSecretValid(clientId: string, secret: string): boolean {
+    const known = this.clientSecrets.get(clientId);
+    return known === undefined || known === secret;
+  }
+
   /**
    * Add a client to the room
    */
@@ -415,6 +424,7 @@ export class RoomManager {
     }
 
     this.clientData.set(clientId, clientData);
+    this.clientSecrets.set(clientId, ws.data.clientSecret);
     this.wsConnections.set(clientId, ws);
 
     positionClientsInCircle(this.getClients());
