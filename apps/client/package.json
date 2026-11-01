@@ -44,6 +44,7 @@
     "@types/qrcode": "1.5.6",
     "@types/throttle-debounce": "5.0.2",
     "@vercel/analytics": "1.6.1",
+    "@vercel/speed-insights": "^2.0.0",
     "async-mutex": "0.5.0",
     "axios": "1.17.0",
     "class-variance-authority": "0.7.1",
