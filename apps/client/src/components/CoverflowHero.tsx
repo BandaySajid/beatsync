@@ -64,7 +64,12 @@ const FEATURED_ITEMS: FeaturedHeroItem[] = [
   },
 ];
 
-export function CoverflowHero({ onPlayTrack, currentTrack, isPlaying, onOpenStudio }: CoverflowHeroProps) {
+export function CoverflowHero({
+  onPlayTrack,
+  currentTrack,
+  isPlaying,
+  onOpenStudio,
+}: CoverflowHeroProps) {
   const [activeIndex, setActiveIndex] = useState(0);
 
   // Auto-rotate every 7 seconds unless hovered
@@ -86,7 +91,8 @@ export function CoverflowHero({ onPlayTrack, currentTrack, isPlaying, onOpenStud
   };
 
   const activeItem = FEATURED_ITEMS[activeIndex];
-  const isCurrentActivePlaying = currentTrack?.id === activeItem.id && isPlaying;
+  const isCurrentActivePlaying =
+    currentTrack?.id === activeItem.id && isPlaying;
 
   const handlePlayCurrent = (item: FeaturedHeroItem) => {
     const track: Track = {
@@ -106,7 +112,7 @@ export function CoverflowHero({ onPlayTrack, currentTrack, isPlaying, onOpenStud
     <div
       onMouseEnter={() => setIsPaused(true)}
       onMouseLeave={() => setIsPaused(false)}
-      className="relative w-full overflow-hidden pt-2 pb-4 select-none"
+      className="relative w-full overflow-hidden pt-2 pb-4 select-none isolate"
     >
       {/* 3D Coverflow Container */}
       <div className="relative h-64 sm:h-72 w-full flex items-center justify-center perspective-1000">
@@ -137,8 +143,8 @@ export function CoverflowHero({ onPlayTrack, currentTrack, isPlaying, onOpenStud
                 transform: isCenter
                   ? "translateX(0) scale(1) translateZ(50px)"
                   : isLeft
-                    ? "translateX(-48%) scale(0.82) rotateY(18deg) translateZ(-40px)"
-                    : "translateX(48%) scale(0.82) rotateY(-18deg) translateZ(-40px)",
+                  ? "translateX(-48%) scale(0.82) rotateY(18deg) translateZ(-40px)"
+                  : "translateX(48%) scale(0.82) rotateY(-18deg) translateZ(-40px)",
                 zIndex: isCenter ? 30 : 10,
                 opacity: isCenter ? 1 : 0.65,
               }}
@@ -178,7 +184,9 @@ export function CoverflowHero({ onPlayTrack, currentTrack, isPlaying, onOpenStud
                 <h3 className="text-base sm:text-lg font-bold text-white tracking-tight drop-shadow truncate">
                   {item.title}
                 </h3>
-                <p className="text-xs text-[#95a8b4] font-medium mt-0.5 truncate drop-shadow">{item.artist}</p>
+                <p className="text-xs text-[#95a8b4] font-medium mt-0.5 truncate drop-shadow">
+                  {item.artist}
+                </p>
               </div>
             </div>
           );
