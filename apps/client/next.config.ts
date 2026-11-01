@@ -1,12 +1,13 @@
 import type { NextConfig } from "next";
-import path from "path";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  outputFileTracingRoot: path.join(__dirname, "../../"),
   serverExternalPackages: ["@distube/ytdl-core"],
-  outputFileTracingIncludes: {
-    "/api/**/*": ["./node_modules/@distube/ytdl-core/**/*"],
-  },
   images: {
     remotePatterns: [
       {
@@ -31,9 +32,7 @@ const nextConfig: NextConfig = {
       },
     ],
   },
-  // This is required to support PostHog trailing slash API requests
   skipTrailingSlashRedirect: true,
-  // 10.0.0.* and 192.168.1.* let phones on the local network load dev resources
   allowedDevOrigins: ["local.beatsync.gg", "10.0.0.*", "192.168.1.*"],
 };
 
