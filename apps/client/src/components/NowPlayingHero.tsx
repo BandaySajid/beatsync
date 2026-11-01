@@ -1,18 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import {
-  Play,
-  Pause,
-  SkipForward,
-  SkipBack,
-  Heart,
-  Radio,
-  Sparkles,
-  Music2,
-  Maximize2,
-  Wifi,
-} from "lucide-react";
+import { Play, Pause, SkipForward, SkipBack, Heart, Radio, Sparkles, Music2, Maximize2, Wifi } from "lucide-react";
 import type { Track } from "@soundlounge/shared";
 import type { PlaybackMode } from "../lib/player";
 
@@ -51,9 +40,7 @@ export function NowPlayingHero({
   const [coverImgSrc, setCoverImgSrc] = useState<string | null>(null);
   const progressBarRef = useRef<HTMLDivElement>(null);
 
-  const rawId = currentTrack?.id.startsWith("yt_")
-    ? currentTrack.id.slice(3)
-    : currentTrack?.id;
+  const rawId = currentTrack?.id.startsWith("yt_") ? currentTrack.id.slice(3) : currentTrack?.id;
 
   // Resolve authentic front cover art with robust fallbacks
   useEffect(() => {
@@ -92,9 +79,7 @@ export function NowPlayingHero({
       <div className="relative overflow-hidden rounded-2xl bg-[#0f1117] border border-[#1a1d26] p-8 sm:p-10 shadow-xl transition-all">
         <div className="flex flex-col sm:flex-row items-center justify-between gap-6">
           <div className="space-y-2 text-center sm:text-left">
-            <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">
-              Soundlounge Studio
-            </h2>
+            <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight">Soundlounge Studio</h2>
             <p className="text-sm text-[#949bb0] max-w-lg leading-relaxed">
               Search for any song or artist in the search bar above to stream solo or in sub-30ms sync with friends.
             </p>
@@ -218,9 +203,7 @@ export function NowPlayingHero({
             <h1 className="text-2xl sm:text-3xl md:text-4xl font-bold text-white tracking-tight line-clamp-1">
               {currentTrack.title}
             </h1>
-            <p className="text-sm sm:text-base text-[#949bb0] font-medium line-clamp-1 mt-1">
-              {currentTrack.artist}
-            </p>
+            <p className="text-sm sm:text-base text-[#949bb0] font-medium line-clamp-1 mt-1">{currentTrack.artist}</p>
           </div>
 
           {/* Interactive Timeline Scrubber */}

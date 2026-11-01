@@ -12,9 +12,7 @@ export function RecentArtistsGrid({ onSelectArtist }: RecentArtistsGridProps) {
   const [selectedRegion, setSelectedRegion] = useState<RegionKey>("all");
 
   const filteredArtists =
-    selectedRegion === "all"
-      ? ARTISTS_CATALOG
-      : ARTISTS_CATALOG.filter((a) => a.region === selectedRegion);
+    selectedRegion === "all" ? ARTISTS_CATALOG : ARTISTS_CATALOG.filter((a) => a.region === selectedRegion);
 
   return (
     <div className="space-y-3.5">

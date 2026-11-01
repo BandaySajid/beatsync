@@ -42,7 +42,7 @@ export function useRoomSync({
   useEffect(() => {
     if (!roomId) return;
 
-    let tokenParam = inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : "";
+    const tokenParam = inviteToken ? `?invite=${encodeURIComponent(inviteToken)}` : "";
     const wsEndpoint = `${serverWsUrl.replace(/^http/, "ws")}/api/rooms/${roomId}/websocket${tokenParam}`;
 
     let socket: WebSocket;
@@ -100,11 +100,7 @@ export function useRoomSync({
             if (action.state.status === "playing" && action.state.currentTrackId) {
               const current = action.queue.find((t) => t.id === action.state.currentTrackId);
               if (current) {
-                syncedPlayer.schedulePlay(
-                  current,
-                  action.state.serverEpochStartTime,
-                  action.state.positionMs
-                );
+                syncedPlayer.schedulePlay(current, action.state.serverEpochStartTime, action.state.positionMs);
               }
             } else if (action.state.status === "paused") {
               syncedPlayer.schedulePause(Date.now(), action.state.positionMs);
@@ -120,11 +116,7 @@ export function useRoomSync({
             const queue = useQueueStore.getState().queue;
             const track = queue.find((t) => t.id === action.trackId);
             if (track) {
-              coordinator.getSyncedPlayer().schedulePlay(
-                track,
-                action.serverTimeToExecute,
-                action.positionMs
-              );
+              coordinator.getSyncedPlayer().schedulePlay(track, action.serverTimeToExecute, action.positionMs);
             }
             break;
           }

@@ -136,12 +136,7 @@ export const useQueueStore = create<QueueState>()((set, get) => ({
 
   reorderQueue: (fromIndex: number, toIndex: number) => {
     set((state) => {
-      if (
-        fromIndex < 0 ||
-        fromIndex >= state.queue.length ||
-        toIndex < 0 ||
-        toIndex >= state.queue.length
-      ) {
+      if (fromIndex < 0 || fromIndex >= state.queue.length || toIndex < 0 || toIndex >= state.queue.length) {
         return state;
       }
 

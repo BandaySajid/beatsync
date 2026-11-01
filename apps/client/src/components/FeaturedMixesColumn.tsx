@@ -48,12 +48,7 @@ const FEATURED_MIXES: FeaturedMix[] = [
   },
 ];
 
-export function FeaturedMixesColumn({
-  onPlayTrack,
-  currentTrack,
-  isPlaying,
-  onClose,
-}: FeaturedMixesColumnProps) {
+export function FeaturedMixesColumn({ onPlayTrack, currentTrack, isPlaying, onClose }: FeaturedMixesColumnProps) {
   const { isLiked, toggleLike } = useLibraryStore();
 
   const handlePlayMix = (mix: FeaturedMix) => {

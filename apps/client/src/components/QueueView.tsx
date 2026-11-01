@@ -1,17 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  ListMusic,
-  Play,
-  Trash2,
-  ArrowRight,
-  BookmarkPlus,
-  Music2,
-  X,
-  Volume2,
-  Sparkles,
-} from "lucide-react";
+import { ListMusic, Play, Trash2, ArrowRight, BookmarkPlus, Music2, X, Volume2, Sparkles } from "lucide-react";
 import type { Track } from "@soundlounge/shared";
 import { TrackArtwork } from "./TrackArtwork";
 
@@ -193,17 +183,13 @@ export function QueueView({
                     <div className="truncate">
                       <p
                         className={`text-xs font-semibold truncate transition-colors ${
-                          isPlaying
-                            ? "text-emerald-400"
-                            : "text-white group-hover:text-sky-300"
+                          isPlaying ? "text-emerald-400" : "text-white group-hover:text-sky-300"
                         }`}
                       >
                         {track.title}
                       </p>
                       <div className="flex items-center gap-2 mt-0.5">
-                        <p className="text-[11px] text-[#71788d] truncate">
-                          {track.artist}
-                        </p>
+                        <p className="text-[11px] text-[#71788d] truncate">{track.artist}</p>
                         {autoQueueReasons[track.id] && (
                           <span className="inline-flex items-center gap-1 text-[9px] font-medium text-[#00e5c9] bg-[#00e5c9]/10 px-1.5 py-0.5 rounded border border-[#00e5c9]/25 shrink-0">
                             <Sparkles className="w-2.5 h-2.5" />

@@ -1,12 +1,4 @@
-export type MusicGenre =
-  | "ghazal"
-  | "punjabi"
-  | "pop"
-  | "hiphop"
-  | "electronic"
-  | "bollywood"
-  | "rock"
-  | "other";
+export type MusicGenre = "ghazal" | "punjabi" | "pop" | "hiphop" | "electronic" | "bollywood" | "rock" | "other";
 
 export interface GenreDefinition {
   id: MusicGenre;
@@ -178,15 +170,7 @@ export const GENRE_DEFINITIONS: Record<MusicGenre, GenreDefinition> = {
       "playboi carti",
       "lil baby",
     ],
-    peerArtists: [
-      "Kendrick Lamar",
-      "Drake",
-      "Travis Scott",
-      "J. Cole",
-      "21 Savage",
-      "Metro Boomin",
-      "Future",
-    ],
+    peerArtists: ["Kendrick Lamar", "Drake", "Travis Scott", "J. Cole", "21 Savage", "Metro Boomin", "Future"],
     keywords: [
       "hip-hop",
       "hiphop",
@@ -300,13 +284,7 @@ export const GENRE_DEFINITIONS: Record<MusicGenre, GenreDefinition> = {
       "red hot chili peppers",
       "radiohead",
     ],
-    peerArtists: [
-      "Coldplay",
-      "Imagine Dragons",
-      "Linkin Park",
-      "Queen",
-      "Arctic Monkeys",
-    ],
+    peerArtists: ["Coldplay", "Imagine Dragons", "Linkin Park", "Queen", "Arctic Monkeys"],
     keywords: [
       "rock",
       "alternative",
@@ -343,11 +321,7 @@ function normalize(str: string): string {
 /**
  * Classifies a track into a recognized MusicGenre with confidence and match reasoning.
  */
-export function classifyGenre(track: {
-  title?: string;
-  artist?: string;
-  genre?: string;
-}): {
+export function classifyGenre(track: { title?: string; artist?: string; genre?: string }): {
   genre: MusicGenre;
   confidence: number;
   matchedBy: "artist" | "keyword" | "fallback";
@@ -362,7 +336,10 @@ export function classifyGenre(track: {
     const g = genreKey as MusicGenre;
 
     for (const coreArtist of def.coreArtists) {
-      if (normArtist.includes(coreArtist) || coreArtist.includes(normArtist && normArtist.length > 3 ? normArtist : "___")) {
+      if (
+        normArtist.includes(coreArtist) ||
+        coreArtist.includes(normArtist && normArtist.length > 3 ? normArtist : "___")
+      ) {
         return {
           genre: g,
           confidence: 0.95,

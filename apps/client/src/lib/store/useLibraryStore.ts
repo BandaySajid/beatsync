@@ -63,9 +63,7 @@ export const useLibraryStore = create<LibraryState>()(
         set((state) => {
           const exists = state.likedTracks.some((t) => t.id === track.id);
           return {
-            likedTracks: exists
-              ? state.likedTracks.filter((t) => t.id !== track.id)
-              : [track, ...state.likedTracks],
+            likedTracks: exists ? state.likedTracks.filter((t) => t.id !== track.id) : [track, ...state.likedTracks],
           };
         });
       },

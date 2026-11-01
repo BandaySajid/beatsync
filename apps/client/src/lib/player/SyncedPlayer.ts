@@ -163,8 +163,8 @@ export class SyncedPlayer {
           playUrl.startsWith("http://") || playUrl.startsWith("https://")
             ? playUrl
             : typeof window !== "undefined"
-            ? `${window.location.origin}${playUrl}`
-            : playUrl;
+              ? `${window.location.origin}${playUrl}`
+              : playUrl;
 
         if (currentSrc !== targetUrl) {
           this.audioElement.src = playUrl;
@@ -189,8 +189,8 @@ export class SyncedPlayer {
           playUrl.startsWith("http://") || playUrl.startsWith("https://")
             ? playUrl
             : typeof window !== "undefined"
-            ? `${window.location.origin}${playUrl}`
-            : playUrl;
+              ? `${window.location.origin}${playUrl}`
+              : playUrl;
         if (currentSrc !== targetUrl) {
           this.audioElement.src = playUrl;
           this.audioElement.currentTime = plan.startPositionMs / 1000;

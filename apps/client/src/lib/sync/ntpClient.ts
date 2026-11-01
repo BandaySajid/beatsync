@@ -1,9 +1,4 @@
-import {
-  PROBE_GAP_MS,
-  NTP_PROBE_PAIR_COUNT,
-  type ClientAction,
-  type ServerAction,
-} from "@soundlounge/shared";
+import { PROBE_GAP_MS, NTP_PROBE_PAIR_COUNT, type ClientAction, type ServerAction } from "@soundlounge/shared";
 
 export interface NtpProbeSample {
   t0: number; // Client transmit time
@@ -73,13 +68,7 @@ export class NtpSyncEngine {
     }
   }
 
-  handleNtpResponse(resp: {
-    t0: number;
-    t1: number;
-    t2: number;
-    probeGroupId: number;
-    probeGroupIndex: number;
-  }) {
+  handleNtpResponse(resp: { t0: number; t1: number; t2: number; probeGroupId: number; probeGroupIndex: number }) {
     if (resp.probeGroupId !== this.groupId) return;
 
     const t3 = Date.now();

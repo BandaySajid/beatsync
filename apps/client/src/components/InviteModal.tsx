@@ -49,13 +49,12 @@ export function InviteModal({ isOpen, onClose, roomId, inviteToken }: InviteModa
         </div>
 
         <p className="text-xs text-gray-300 leading-relaxed">
-          Anyone with this private link will join your room and synchronize their audio player to within sub-30ms using precision edge NTP clock barriers.
+          Anyone with this private link will join your room and synchronize their audio player to within sub-30ms using
+          precision edge NTP clock barriers.
         </p>
 
         <div className="space-y-2">
-          <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">
-            Shareable Invite URL
-          </label>
+          <label className="text-[11px] font-bold text-gray-400 uppercase tracking-wider">Shareable Invite URL</label>
           <div className="flex items-center gap-2 bg-black/60 border border-white/10 rounded-2xl p-2 shadow-inner">
             <input
               type="text"

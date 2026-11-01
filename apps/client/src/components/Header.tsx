@@ -56,9 +56,7 @@ export function Header({
           <button
             onClick={() => onModeChange("solo")}
             className={`flex items-center gap-1.5 px-3 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-              mode === "solo"
-                ? "bg-[#1d2334] text-white shadow-sm"
-                : "text-[#6b738a] hover:text-white"
+              mode === "solo" ? "bg-[#1d2334] text-white shadow-sm" : "text-[#6b738a] hover:text-white"
             }`}
           >
             <Music2 className="w-3.5 h-3.5" />
@@ -101,9 +99,7 @@ export function Header({
               </button>
             </>
           ) : (
-            <div className="text-xs text-[#636c82] hidden sm:block">
-              Solo Listening · Edge Native
-            </div>
+            <div className="text-xs text-[#636c82] hidden sm:block">Solo Listening · Edge Native</div>
           )}
         </div>
       </div>

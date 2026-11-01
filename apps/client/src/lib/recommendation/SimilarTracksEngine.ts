@@ -1,11 +1,6 @@
 import type { Track } from "@soundlounge/shared";
 import { ARTISTS_CATALOG, type ArtistProfileData } from "../data/artistsCatalog";
-import {
-  classifyGenre,
-  getPeerArtistsForArtist,
-  getPeerArtistsForGenre,
-  type MusicGenre,
-} from "./genreTaxonomy";
+import { classifyGenre, getPeerArtistsForArtist, getPeerArtistsForGenre, type MusicGenre } from "./genreTaxonomy";
 
 export interface FindSimilarOptions {
   currentTrack: Track;
@@ -15,11 +10,7 @@ export interface FindSimilarOptions {
   fetchFn?: typeof fetch;
 }
 
-export type SimilarMatchType =
-  | "same_artist"
-  | "peer_artist"
-  | "genre_match"
-  | "live_search";
+export type SimilarMatchType = "same_artist" | "peer_artist" | "genre_match" | "live_search";
 
 export interface SimilarTrackResult {
   track: Track;
@@ -45,9 +36,7 @@ function clean(str: string): string {
  * 3. Tracks from other artists in the same genre
  * 4. Dynamic live search via YouTube edge API
  */
-export async function findSimilarTrack(
-  options: FindSimilarOptions
-): Promise<SimilarTrackResult | null> {
+export async function findSimilarTrack(options: FindSimilarOptions): Promise<SimilarTrackResult | null> {
   const {
     currentTrack,
     existingQueue,
@@ -161,7 +150,11 @@ export async function findSimilarTrack(
         query = `best ${detectedGenre} songs`;
       } else {
         // Strip common suffixes from title
-        query = currentTrack.title.replace(/\(.*?\)/g, "").replace(/\[.*?\]/g, "").trim() + " similar";
+        query =
+          currentTrack.title
+            .replace(/\(.*?\)/g, "")
+            .replace(/\[.*?\]/g, "")
+            .trim() + " similar";
       }
 
       const res = await fetchFn(`${searchApiUrl}?q=${encodeURIComponent(query)}`);
@@ -172,10 +165,7 @@ export async function findSimilarTrack(
         // Find the first track that is not already in the queue or history
         const liveCandidate = fetchedTracks.find(
           (t) =>
-            !excludedIds.has(t.id) &&
-            clean(t.title) !== cleanTitle &&
-            t.durationMs > 30000 &&
-            t.durationMs < 1200000 // Between 30s and 20 mins
+            !excludedIds.has(t.id) && clean(t.title) !== cleanTitle && t.durationMs > 30000 && t.durationMs < 1200000 // Between 30s and 20 mins
         );
 
         if (liveCandidate) {

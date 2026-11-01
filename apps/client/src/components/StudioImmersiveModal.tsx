@@ -83,16 +83,15 @@ export function StudioImmersiveModal({
   const rawId = currentTrack.id.startsWith("yt_") ? currentTrack.id.slice(3) : currentTrack.id;
   const squareCover = currentTrack.coverUrl?.includes("googleusercontent.com")
     ? currentTrack.coverUrl.replace(/=w\d+-h\d+[^"]*/, "=w1200-h1200-l90-rj")
-    : (/^[A-Za-z0-9_-]{11}$/.test(rawId)
-        ? `https://i.ytimg.com/vi/${rawId}/maxresdefault.jpg`
-        : currentTrack.coverUrl?.replace("hqdefault.jpg", "maxresdefault.jpg") || currentTrack.coverUrl);
-
-  const bannerUrl =
-    /^[A-Za-z0-9_-]{11}$/.test(rawId)
+    : /^[A-Za-z0-9_-]{11}$/.test(rawId)
       ? `https://i.ytimg.com/vi/${rawId}/maxresdefault.jpg`
-      : (currentTrack.coverUrl?.includes("googleusercontent.com")
-          ? currentTrack.coverUrl.replace(/=w\d+-h\d+[^"]*/, "=w1920-h1080-l90-rj")
-          : currentTrack.coverUrl);
+      : currentTrack.coverUrl?.replace("hqdefault.jpg", "maxresdefault.jpg") || currentTrack.coverUrl;
+
+  const bannerUrl = /^[A-Za-z0-9_-]{11}$/.test(rawId)
+    ? `https://i.ytimg.com/vi/${rawId}/maxresdefault.jpg`
+    : currentTrack.coverUrl?.includes("googleusercontent.com")
+      ? currentTrack.coverUrl.replace(/=w\d+-h\d+[^"]*/, "=w1920-h1080-l90-rj")
+      : currentTrack.coverUrl;
 
   const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!progressBarRef.current) return;
@@ -144,9 +143,7 @@ export function StudioImmersiveModal({
           </div>
           <div>
             <div className="flex items-center gap-2">
-              <span className="text-xs uppercase tracking-widest font-bold text-sky-400">
-                Studio Immersion
-              </span>
+              <span className="text-xs uppercase tracking-widest font-bold text-sky-400">Studio Immersion</span>
               <span className="text-[10px] bg-white/10 px-2 py-0.5 rounded-full text-gray-300 font-mono">
                 Hi-Fi AAC 256kbps
               </span>
@@ -189,17 +186,11 @@ export function StudioImmersiveModal({
           {/* Front Album Jacket Cover */}
           <div
             className={`relative z-20 w-64 h-64 sm:w-80 sm:h-80 md:w-96 md:h-96 rounded-3xl overflow-hidden bg-black/70 border-2 border-white/20 shadow-2xl transition-all duration-700 ${
-              isPlaying
-                ? "shadow-[0_25px_80px_rgba(99,102,241,0.45)] ring-4 ring-indigo-500/30"
-                : "shadow-black/95"
+              isPlaying ? "shadow-[0_25px_80px_rgba(99,102,241,0.45)] ring-4 ring-indigo-500/30" : "shadow-black/95"
             }`}
           >
             {squareCover ? (
-              <img
-                src={squareCover}
-                alt={currentTrack.title}
-                className="w-full h-full object-cover"
-              />
+              <img src={squareCover} alt={currentTrack.title} className="w-full h-full object-cover" />
             ) : (
               <div className="w-full h-full flex items-center justify-center text-gray-600">
                 <Music2 className="w-24 h-24" />
@@ -271,7 +262,9 @@ export function StudioImmersiveModal({
             onClick={() => onToggleLike(currentTrack)}
             aria-label={isLiked ? "Unlike track" : "Like track"}
             className={`p-3 rounded-2xl border border-white/10 bg-white/5 hover:bg-white/10 transition-all cursor-pointer hover:scale-110 active:scale-95 ${
-              isLiked ? "text-rose-400 border-rose-500/40 shadow-lg shadow-rose-500/20" : "text-gray-400 hover:text-white"
+              isLiked
+                ? "text-rose-400 border-rose-500/40 shadow-lg shadow-rose-500/20"
+                : "text-gray-400 hover:text-white"
             }`}
           >
             <Heart className={`w-5 h-5 ${isLiked ? "fill-current" : ""}`} />
@@ -292,11 +285,7 @@ export function StudioImmersiveModal({
               aria-label={isPlaying ? "Pause" : "Play"}
               className="w-16 h-16 rounded-full bg-white hover:bg-gray-100 text-black flex items-center justify-center shadow-2xl shadow-white/30 hover:scale-105 active:scale-95 transition-all cursor-pointer"
             >
-              {isPlaying ? (
-                <Pause className="w-7 h-7 fill-current" />
-              ) : (
-                <Play className="w-7 h-7 fill-current ml-1" />
-              )}
+              {isPlaying ? <Pause className="w-7 h-7 fill-current" /> : <Play className="w-7 h-7 fill-current ml-1" />}
             </button>
 
             <button

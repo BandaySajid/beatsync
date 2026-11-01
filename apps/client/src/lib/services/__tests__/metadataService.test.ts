@@ -1,10 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import {
-  getAlbumById,
-  searchAlbums,
-  getAlbumsForArtist,
-  getAllAlbums,
-} from "../metadataService";
+import { getAlbumById, searchAlbums, getAlbumsForArtist, getAllAlbums } from "../metadataService";
 
 describe("Metadata & Disambiguation Service", () => {
   it("disambiguates identical album titles by release year and artist/composer", async () => {

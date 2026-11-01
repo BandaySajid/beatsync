@@ -1,10 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import {
-  classifyGenre,
-  getPeerArtistsForArtist,
-  getPeerArtistsForGenre,
-  type MusicGenre,
-} from "../genreTaxonomy";
+import { classifyGenre, getPeerArtistsForArtist, getPeerArtistsForGenre, type MusicGenre } from "../genreTaxonomy";
 
 describe("Genre Taxonomy & Classification Engine", () => {
   it("accurately classifies Ghazal artists and tracks", () => {

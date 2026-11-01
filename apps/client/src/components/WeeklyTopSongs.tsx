@@ -1,15 +1,7 @@
 "use client";
 
 import React from "react";
-import {
-  Play,
-  Pause,
-  Heart,
-  Headphones,
-  Plus,
-  ArrowRight,
-  TrendingUp,
-} from "lucide-react";
+import { Play, Pause, Heart, Headphones, Plus, ArrowRight, TrendingUp } from "lucide-react";
 import type { Track } from "@soundlounge/shared";
 import { useLibraryStore } from "../lib/store/useLibraryStore";
 import { TrackArtwork } from "./TrackArtwork";
@@ -131,9 +123,7 @@ export function WeeklyTopSongs({
 
           // Calculate circular progress percentage
           const effectiveDuration = isThisTrack ? durationMs || song.durationMs : song.durationMs;
-          const progressPercent = isThisTrack
-            ? Math.min(100, Math.max(0, (positionMs / effectiveDuration) * 100))
-            : 0;
+          const progressPercent = isThisTrack ? Math.min(100, Math.max(0, (positionMs / effectiveDuration) * 100)) : 0;
 
           // SVG circle parameters (radius: 14, circumference: ~88)
           const radius = 14;
@@ -154,14 +144,7 @@ export function WeeklyTopSongs({
                   {/* SVG Circular Progress Track (visible when this track is selected) */}
                   {isThisTrack && (
                     <svg className="absolute inset-0 w-full h-full -rotate-90 pointer-events-none">
-                      <circle
-                        cx="18"
-                        cy="18"
-                        r={radius}
-                        fill="transparent"
-                        stroke="#1a323f"
-                        strokeWidth="2.5"
-                      />
+                      <circle cx="18" cy="18" r={radius} fill="transparent" stroke="#1a323f" strokeWidth="2.5" />
                       <circle
                         cx="18"
                         cy="18"
@@ -220,9 +203,7 @@ export function WeeklyTopSongs({
                 <div className="text-right truncate max-w-[130px] sm:max-w-[200px]">
                   <p
                     className={`text-xs font-semibold truncate transition-colors ${
-                      isThisTrack
-                        ? "text-[#00e5c9] font-bold"
-                        : "text-white group-hover:text-[#00e5c9]"
+                      isThisTrack ? "text-[#00e5c9] font-bold" : "text-white group-hover:text-[#00e5c9]"
                     }`}
                   >
                     {song.title}

@@ -82,9 +82,7 @@ describe("Intelligent Similar Tracks Recommendation Engine", () => {
     expect(res).not.toBeNull();
     // Must recommend a fellow Ghazal legend
     const peerArtists = ["mehdi hassan", "ghulam ali", "pankaj udhas"];
-    const matchedPeer = peerArtists.some((p) =>
-      res!.track.artist.toLowerCase().includes(p)
-    );
+    const matchedPeer = peerArtists.some((p) => res!.track.artist.toLowerCase().includes(p));
     expect(matchedPeer).toBe(true);
     expect(res!.matchType).toMatch(/peer_artist|genre_match/);
     expect(res!.reason.toLowerCase()).toContain("ghazal");
@@ -92,13 +90,7 @@ describe("Intelligent Similar Tracks Recommendation Engine", () => {
 
   it("recommends Pop peers (Dua Lipa / Billie Eilish) when Pop track is playing", async () => {
     // Exclude all The Weeknd tracks
-    const allWeekndIds = [
-      "yt_34Na4j8AVgA",
-      "yt_fHI8X480mxo",
-      "yt_XXYlFuWEuKI",
-      "yt_yzTuBuRdAyA",
-      "yt_CtyytBCHA9U",
-    ];
+    const allWeekndIds = ["yt_34Na4j8AVgA", "yt_fHI8X480mxo", "yt_XXYlFuWEuKI", "yt_yzTuBuRdAyA", "yt_CtyytBCHA9U"];
     const dummyQueue: Track[] = allWeekndIds.map((id) => ({
       id,
       title: "Sample Pop",
@@ -115,8 +107,7 @@ describe("Intelligent Similar Tracks Recommendation Engine", () => {
 
     expect(res).not.toBeNull();
     const isPopPeer =
-      res!.track.artist.toLowerCase().includes("dua lipa") ||
-      res!.track.artist.toLowerCase().includes("billie eilish");
+      res!.track.artist.toLowerCase().includes("dua lipa") || res!.track.artist.toLowerCase().includes("billie eilish");
     expect(isPopPeer).toBe(true);
   });
 

@@ -1,17 +1,7 @@
 "use client";
 
 import React from "react";
-import {
-  Play,
-  ArrowLeft,
-  CheckCircle2,
-  Users,
-  Clock,
-  Plus,
-  ArrowRight,
-  Heart,
-  Globe,
-} from "lucide-react";
+import { Play, ArrowLeft, CheckCircle2, Users, Clock, Plus, ArrowRight, Heart, Globe } from "lucide-react";
 import type { Track } from "@soundlounge/shared";
 import type { ArtistProfileData } from "../lib/data/artistsCatalog";
 import { useLibraryStore } from "../lib/store/useLibraryStore";
@@ -69,11 +59,7 @@ export function ArtistDetailView({
         <div className="relative z-10 flex flex-col sm:flex-row items-center sm:items-end gap-6 text-center sm:text-left">
           {/* Verified High-Res Face Portrait */}
           <div className="relative w-32 h-32 sm:w-40 sm:h-40 rounded-2xl overflow-hidden border-2 border-[#00e5c9]/40 shadow-2xl flex-shrink-0 bg-[#0f1f28]">
-            <img
-              src={artist.avatarUrl}
-              alt={artist.name}
-              className="w-full h-full object-cover"
-            />
+            <img src={artist.avatarUrl} alt={artist.name} className="w-full h-full object-cover" />
           </div>
 
           {/* Name & Bio */}
@@ -87,25 +73,17 @@ export function ArtistDetailView({
               </span>
             </div>
 
-            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">
-              {artist.name}
-            </h1>
-            <p className="text-xs text-[#6e828f] font-mono">
-              Born / Legal Name: {artist.realName}
-            </p>
+            <h1 className="text-2xl sm:text-4xl font-extrabold text-white tracking-tight">{artist.name}</h1>
+            <p className="text-xs text-[#6e828f] font-mono">Born / Legal Name: {artist.realName}</p>
 
-            <p className="text-xs text-[#8c9fae] max-w-xl line-clamp-2 leading-relaxed">
-              {artist.bio}
-            </p>
+            <p className="text-xs text-[#8c9fae] max-w-xl line-clamp-2 leading-relaxed">{artist.bio}</p>
 
             <div className="pt-2 flex flex-wrap items-center justify-center sm:justify-start gap-4 text-xs font-mono tabular-nums text-[#8c9fae]">
               <span className="flex items-center gap-1.5">
                 <Users className="w-3.5 h-3.5 text-[#00e5c9]" />
                 <strong className="text-white">{artist.monthlyListeners}</strong> monthly listeners
               </span>
-              <span className="px-2 py-0.5 rounded bg-[#13222a] text-[#718593]">
-                {artist.genre}
-              </span>
+              <span className="px-2 py-0.5 rounded bg-[#13222a] text-[#718593]">{artist.genre}</span>
             </div>
           </div>
 
@@ -127,9 +105,7 @@ export function ArtistDetailView({
         <div className="flex items-center justify-between pb-2 border-b border-[#14232c]">
           <h2 className="text-sm font-bold text-white tracking-tight flex items-center gap-2">
             <span>All Featured Tracks by {artist.name}</span>
-            <span className="text-xs text-[#6e828f] font-normal">
-              ({artist.topTracks.length} songs available)
-            </span>
+            <span className="text-xs text-[#6e828f] font-normal">({artist.topTracks.length} songs available)</span>
           </h2>
           <span className="text-[11px] text-[#6e828f]">Direct Edge Streaming</span>
         </div>
@@ -180,9 +156,7 @@ export function ArtistDetailView({
                   <div className="truncate">
                     <p
                       className={`text-xs font-semibold truncate transition-colors ${
-                        isThisTrack
-                          ? "text-[#00e5c9] font-bold"
-                          : "text-white group-hover:text-[#00e5c9]"
+                        isThisTrack ? "text-[#00e5c9] font-bold" : "text-white group-hover:text-[#00e5c9]"
                       }`}
                     >
                       {track.title}

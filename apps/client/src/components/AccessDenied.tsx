@@ -29,7 +29,8 @@ export function AccessDenied({ roomId, onRetryWithToken, onReturnToSolo }: Acces
         <div>
           <h2 className="text-lg font-bold text-white">Private Room Access Denied</h2>
           <p className="text-xs text-gray-400 mt-1">
-            Room <span className="font-mono text-gray-200">{roomId}</span> is private (error 4003). A valid invite token is required to join this synchronized listening session.
+            Room <span className="font-mono text-gray-200">{roomId}</span> is private (error 4003). A valid invite token
+            is required to join this synchronized listening session.
           </p>
         </div>
 

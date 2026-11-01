@@ -29,11 +29,7 @@ export class SoloPlayer {
     this.initAudioElement();
   }
 
-  setTransportHandlers(handlers: {
-    onNext?: () => void;
-    onPrevious?: () => void;
-    onEnded?: () => void;
-  }): void {
+  setTransportHandlers(handlers: { onNext?: () => void; onPrevious?: () => void; onEnded?: () => void }): void {
     this.onNextCallback = handlers.onNext;
     this.onPreviousCallback = handlers.onPrevious;
     this.onEndedCallback = handlers.onEnded;
@@ -181,8 +177,8 @@ export class SoloPlayer {
         playUrl.startsWith("http://") || playUrl.startsWith("https://")
           ? playUrl
           : typeof window !== "undefined"
-          ? `${window.location.origin}${playUrl}`
-          : playUrl;
+            ? `${window.location.origin}${playUrl}`
+            : playUrl;
 
       if (currentSrc !== targetUrl) {
         this.audioElement.src = playUrl;

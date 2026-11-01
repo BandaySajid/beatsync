@@ -1,18 +1,7 @@
 "use client";
 
 import React from "react";
-import {
-  ArrowLeft,
-  Play,
-  ListPlus,
-  Disc3,
-  Clapperboard,
-  Music,
-  Users,
-  Clock,
-  Sparkles,
-  Volume2,
-} from "lucide-react";
+import { ArrowLeft, Play, ListPlus, Disc3, Clapperboard, Music, Users, Clock, Sparkles, Volume2 } from "lucide-react";
 import type { Album, Track } from "@soundlounge/shared";
 import { TrackArtwork } from "./TrackArtwork";
 
@@ -125,9 +114,7 @@ export function AlbumDetailView({
               <h1 className="text-2xl sm:text-3xl lg:text-4xl font-extrabold text-white tracking-tight">
                 {album.title}
               </h1>
-              <p className="text-xs sm:text-sm text-[#00e5c9] font-medium mt-1">
-                {album.disambiguationLabel}
-              </p>
+              <p className="text-xs sm:text-sm text-[#00e5c9] font-medium mt-1">{album.disambiguationLabel}</p>
             </div>
 
             {/* Movie Star Cast & Credits if Bollywood / Film */}
@@ -137,27 +124,21 @@ export function AlbumDetailView({
                   <p className="flex items-center gap-2">
                     <Users className="w-3.5 h-3.5 text-[#00e5c9] shrink-0" />
                     <span className="text-[#64748b]">Starring:</span>
-                    <strong className="text-white font-medium">
-                      {album.movieDetails.starCast.join(", ")}
-                    </strong>
+                    <strong className="text-white font-medium">{album.movieDetails.starCast.join(", ")}</strong>
                   </p>
                 )}
                 {album.movieDetails.musicDirectors.length > 0 && (
                   <p className="flex items-center gap-2">
                     <Music className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
                     <span className="text-[#64748b]">Music Director:</span>
-                    <strong className="text-white font-medium">
-                      {album.movieDetails.musicDirectors.join(", ")}
-                    </strong>
+                    <strong className="text-white font-medium">{album.movieDetails.musicDirectors.join(", ")}</strong>
                   </p>
                 )}
                 {album.movieDetails.lyricists && (
                   <p className="flex items-center gap-2 text-[11px]">
                     <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
                     <span className="text-[#64748b]">Lyrics:</span>
-                    <span className="text-[#cbd5e1]">
-                      {album.movieDetails.lyricists.join(", ")}
-                    </span>
+                    <span className="text-[#cbd5e1]">{album.movieDetails.lyricists.join(", ")}</span>
                   </p>
                 )}
               </div>
@@ -202,9 +183,7 @@ export function AlbumDetailView({
             <Disc3 className="w-4 h-4 text-[#00e5c9]" />
             <span>Original Tracklist</span>
           </h2>
-          <span className="text-xs text-[#64748b]">
-            Track order as released originally
-          </span>
+          <span className="text-xs text-[#64748b]">Track order as released originally</span>
         </div>
 
         <div className="rounded-xl border border-[#171c28] bg-[#090b10] overflow-hidden divide-y divide-[#121620]">
@@ -248,16 +227,12 @@ export function AlbumDetailView({
                   <div className="truncate">
                     <p
                       className={`text-xs font-semibold truncate transition-colors ${
-                        active
-                          ? "text-[#00e5c9]"
-                          : "text-white group-hover:text-cyan-300"
+                        active ? "text-[#00e5c9]" : "text-white group-hover:text-cyan-300"
                       }`}
                     >
                       {track.title}
                     </p>
-                    <p className="text-[11px] text-[#718096] truncate mt-0.5">
-                      {track.artist}
-                    </p>
+                    <p className="text-[11px] text-[#718096] truncate mt-0.5">{track.artist}</p>
                   </div>
                 </div>
 

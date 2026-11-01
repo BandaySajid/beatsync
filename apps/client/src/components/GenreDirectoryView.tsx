@@ -1,14 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  Sparkles,
-  Play,
-  Music2,
-  Disc3,
-  Users,
-  Radio,
-} from "lucide-react";
+import { Sparkles, Play, Music2, Disc3, Users, Radio } from "lucide-react";
 import type { Track, Album } from "@soundlounge/shared";
 import { GENRE_DEFINITIONS, type MusicGenre } from "../lib/recommendation/genreTaxonomy";
 import { ARTISTS_CATALOG, type ArtistProfileData } from "../lib/data/artistsCatalog";
@@ -88,11 +81,7 @@ const GENRE_CARDS: GenreCardInfo[] = [
   },
 ];
 
-export function GenreDirectoryView({
-  onPlayGenreRadio,
-  onSelectArtist,
-  onSelectAlbum,
-}: GenreDirectoryViewProps) {
+export function GenreDirectoryView({ onPlayGenreRadio, onSelectArtist, onSelectAlbum }: GenreDirectoryViewProps) {
   const [selectedGenre, setSelectedGenre] = useState<MusicGenre | null>(null);
 
   // Helper to find artists for a genre
@@ -109,9 +98,7 @@ export function GenreDirectoryView({
 
   // Helper to find albums for a genre
   const getAlbumsForGenre = (genreId: MusicGenre) => {
-    return ALBUMS_CATALOG.filter((album) =>
-      album.genres.some((g) => g.toLowerCase().includes(genreId))
-    );
+    return ALBUMS_CATALOG.filter((album) => album.genres.some((g) => g.toLowerCase().includes(genreId)));
   };
 
   return (
@@ -141,11 +128,7 @@ export function GenreDirectoryView({
               key={card.id}
               className={`rounded-2xl p-5 border transition-all duration-300 flex flex-col justify-between bg-gradient-to-br ${
                 card.gradient
-              } ${
-                isSelected
-                  ? "border-[#00e5c9] ring-1 ring-[#00e5c9]/50"
-                  : `border-[#1b2334] ${card.borderHover}`
-              }`}
+              } ${isSelected ? "border-[#00e5c9] ring-1 ring-[#00e5c9]/50" : `border-[#1b2334] ${card.borderHover}`}`}
             >
               <div className="space-y-3">
                 <div className="flex items-center justify-between">
@@ -163,12 +146,8 @@ export function GenreDirectoryView({
                 </div>
 
                 <div>
-                  <h3 className="text-base font-bold text-white tracking-tight">
-                    {card.title}
-                  </h3>
-                  <p className="text-[11px] text-[#9ba5b9] mt-1 line-clamp-2">
-                    {card.tagline}
-                  </p>
+                  <h3 className="text-base font-bold text-white tracking-tight">{card.title}</h3>
+                  <p className="text-[11px] text-[#9ba5b9] mt-1 line-clamp-2">{card.tagline}</p>
                 </div>
 
                 {/* Leading Artists in Genre */}

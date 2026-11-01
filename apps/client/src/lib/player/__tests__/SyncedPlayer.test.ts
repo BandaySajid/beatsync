@@ -62,22 +62,12 @@ describe("SyncedPlayer Precision Audio Engine", () => {
     const nowServerTime = 1700000010000; // 10,000ms expected position
 
     // Local position is 9,950ms (drift = -50ms, lagging by 50ms)
-    const driftLagging = player.calculateDrift(
-      serverEpochStartTime,
-      initialPositionMs,
-      nowServerTime,
-      9950
-    );
+    const driftLagging = player.calculateDrift(serverEpochStartTime, initialPositionMs, nowServerTime, 9950);
     expect(driftLagging.driftMs).toBe(-50);
     expect(driftLagging.needsCorrection).toBe(true);
 
     // Local position is 10,010ms (drift = +10ms, within 30ms tolerance)
-    const driftAcceptable = player.calculateDrift(
-      serverEpochStartTime,
-      initialPositionMs,
-      nowServerTime,
-      10010
-    );
+    const driftAcceptable = player.calculateDrift(serverEpochStartTime, initialPositionMs, nowServerTime, 10010);
     expect(driftAcceptable.driftMs).toBe(10);
     expect(driftAcceptable.needsCorrection).toBe(false);
   });

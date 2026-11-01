@@ -39,8 +39,11 @@ async function searchExactSong(title: string, artist?: string): Promise<string |
 
   try {
     const yt = await getInnertube();
-    const cleanTitle = title.replace(/\(.*?\)/g, "").replace(/\[.*?\]/g, "").trim();
-    const cleanArtist = (artist && artist !== "Unknown Artist") ? artist : "";
+    const cleanTitle = title
+      .replace(/\(.*?\)/g, "")
+      .replace(/\[.*?\]/g, "")
+      .trim();
+    const cleanArtist = artist && artist !== "Unknown Artist" ? artist : "";
     const query = `${cleanTitle} ${cleanArtist} audio`.trim();
 
     const search = await yt.search(query);
@@ -166,9 +169,7 @@ async function getAudioStreamUrl(
   } catch {}
 
   const expiresAt =
-    Number.isFinite(expireMs) && expireMs > 0
-      ? Math.min(expireMs - 60000, Date.now() + 3600000)
-      : Date.now() + 3600000;
+    Number.isFinite(expireMs) && expireMs > 0 ? Math.min(expireMs - 60000, Date.now() + 3600000) : Date.now() + 3600000;
 
   const result: CachedFormat = {
     url: chosenFormat.url,
@@ -221,8 +222,7 @@ export async function GET(req: NextRequest) {
     }
 
     const contentLength =
-      upstreamRes.headers.get("content-length") ||
-      (streamInfo.contentLength ? String(streamInfo.contentLength) : null);
+      upstreamRes.headers.get("content-length") || (streamInfo.contentLength ? String(streamInfo.contentLength) : null);
     if (contentLength) {
       responseHeaders.set("Content-Length", contentLength);
     }

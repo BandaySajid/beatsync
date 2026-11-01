@@ -122,10 +122,7 @@ export function NavigationSidebar({
     <>
       {/* Mobile Backdrop Overlay */}
       {isOpenMobile && (
-        <div
-          onClick={onCloseMobile}
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden"
-        />
+        <div onClick={onCloseMobile} className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 md:hidden" />
       )}
 
       {/* Main Persistent Sidebar */}
@@ -136,10 +133,7 @@ export function NavigationSidebar({
       >
         <div className="space-y-5">
           {/* Brand Logo with Cyan Soundwave */}
-          <div
-            onClick={() => onTabChange("home")}
-            className="flex items-center gap-3 px-2 cursor-pointer group"
-          >
+          <div onClick={() => onTabChange("home")} className="flex items-center gap-3 px-2 cursor-pointer group">
             <div className="flex items-center gap-0.5 h-6">
               <span className="w-1 h-3.5 bg-[#00e5c9] rounded-full group-hover:h-5 transition-all" />
               <span className="w-1 h-5 bg-[#00e5c9] rounded-full group-hover:h-3 transition-all" />
@@ -148,12 +142,8 @@ export function NavigationSidebar({
               <span className="w-1 h-2.5 bg-[#00e5c9] rounded-full group-hover:h-4 transition-all" />
             </div>
             <div className="truncate">
-              <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">
-                Soundlounge
-              </h1>
-              <p className="text-[10px] text-[#637785] font-medium tracking-wide">
-                Studio Streaming
-              </p>
+              <h1 className="text-base font-bold tracking-tight text-white flex items-center gap-1.5">Soundlounge</h1>
+              <p className="text-[10px] text-[#637785] font-medium tracking-wide">Studio Streaming</p>
             </div>
           </div>
 
@@ -162,9 +152,7 @@ export function NavigationSidebar({
             <button
               onClick={() => onModeChange("solo")}
               className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                mode === "solo"
-                  ? "bg-[#182833] text-white shadow-sm"
-                  : "text-[#697d8a] hover:text-white"
+                mode === "solo" ? "bg-[#182833] text-white shadow-sm" : "text-[#697d8a] hover:text-white"
               }`}
             >
               <Music2 className="w-3.5 h-3.5" />
@@ -200,9 +188,7 @@ export function NavigationSidebar({
                       : "text-[#7b8f9d] hover:text-white hover:bg-[#0c1820]"
                   }`}
                 >
-                  <span className={isActive ? "text-[#00e5c9]" : "text-[#586e7c]"}>
-                    {item.icon}
-                  </span>
+                  <span className={isActive ? "text-[#00e5c9]" : "text-[#586e7c]"}>{item.icon}</span>
                   <span className="truncate">{item.label}</span>
                 </button>
               );
@@ -227,17 +213,13 @@ export function NavigationSidebar({
                   }`}
                 >
                   <div className="flex items-center gap-3 truncate">
-                    <span className={isActive ? "text-[#00e5c9]" : "text-[#586e7c]"}>
-                      {item.icon}
-                    </span>
+                    <span className={isActive ? "text-[#00e5c9]" : "text-[#586e7c]"}>{item.icon}</span>
                     <span className="truncate">{item.label}</span>
                   </div>
                   {item.count !== undefined && item.count > 0 && (
                     <span
                       className={`text-[10px] font-mono tabular-nums px-1.5 py-0.5 rounded-md ${
-                        isActive
-                          ? "bg-[#00e5c9]/20 text-[#00e5c9]"
-                          : "bg-[#122028] text-[#637684]"
+                        isActive ? "bg-[#00e5c9]/20 text-[#00e5c9]" : "bg-[#122028] text-[#637684]"
                       }`}
                     >
                       {item.count}
@@ -286,9 +268,7 @@ export function NavigationSidebar({
                   iconClassName="w-4 h-4"
                 />
                 <div className="truncate">
-                  <p className="text-[11px] font-semibold text-white truncate">
-                    {lastSession.track.title}
-                  </p>
+                  <p className="text-[11px] font-semibold text-white truncate">{lastSession.track.title}</p>
                   <p className="text-[10px] text-[#667a88] font-mono tabular-nums">
                     Resume {formatTime(lastSession.positionMs)}
                   </p>

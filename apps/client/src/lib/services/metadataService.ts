@@ -40,18 +40,14 @@ export async function getAlbumById(id: string): Promise<Album | null> {
 /**
  * Searches and disambiguates albums by title, year, movie star cast, or artist.
  */
-export async function searchAlbums(
-  query: string,
-  options?: { year?: number; artist?: string }
-): Promise<Album[]> {
+export async function searchAlbums(query: string, options?: { year?: number; artist?: string }): Promise<Album[]> {
   const cleanQ = clean(query);
   if (!cleanQ) return [];
 
   const matched = ALBUMS_CATALOG.filter((album) => {
     const titleMatch = clean(album.title).includes(cleanQ) || cleanQ.includes(clean(album.title));
     const artistMatch =
-      clean(album.primaryArtist).includes(cleanQ) ||
-      album.featuredSingers.some((s) => clean(s).includes(cleanQ));
+      clean(album.primaryArtist).includes(cleanQ) || album.featuredSingers.some((s) => clean(s).includes(cleanQ));
     const movieMatch =
       album.movieDetails &&
       (clean(album.movieDetails.movieTitle).includes(cleanQ) ||
@@ -69,8 +65,7 @@ export async function searchAlbums(
     if (options?.artist) {
       const artClean = clean(options.artist);
       const isArtist =
-        clean(album.primaryArtist).includes(artClean) ||
-        album.featuredSingers.some((s) => clean(s).includes(artClean));
+        clean(album.primaryArtist).includes(artClean) || album.featuredSingers.some((s) => clean(s).includes(artClean));
       if (!isArtist) return false;
     }
 
@@ -100,7 +95,5 @@ export async function getAlbumsForArtist(artistName: string): Promise<Album[]> {
  */
 export function getAlbumsByGenre(genre: string): Album[] {
   const gClean = clean(genre);
-  return ALBUMS_CATALOG.filter((album) =>
-    album.genres.some((g) => clean(g).includes(gClean))
-  );
+  return ALBUMS_CATALOG.filter((album) => album.genres.some((g) => clean(g).includes(gClean)));
 }

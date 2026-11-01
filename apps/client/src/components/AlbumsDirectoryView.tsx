@@ -1,14 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  Disc3,
-  Search,
-  Clapperboard,
-  Play,
-  Calendar,
-  Sparkles,
-} from "lucide-react";
+import { Disc3, Search, Clapperboard, Play, Calendar, Sparkles } from "lucide-react";
 import type { Album } from "@soundlounge/shared";
 import { ALBUMS_CATALOG } from "../lib/data/albumsCatalog";
 import { TrackArtwork } from "./TrackArtwork";
@@ -18,18 +11,9 @@ interface AlbumsDirectoryViewProps {
   onPlayAlbumQuick: (album: Album) => void;
 }
 
-type AlbumFilterTab =
-  | "all"
-  | "movie_soundtrack"
-  | "studio_album"
-  | "bollywood"
-  | "punjabi"
-  | "rock_pop";
+type AlbumFilterTab = "all" | "movie_soundtrack" | "studio_album" | "bollywood" | "punjabi" | "rock_pop";
 
-export function AlbumsDirectoryView({
-  onSelectAlbum,
-  onPlayAlbumQuick,
-}: AlbumsDirectoryViewProps) {
+export function AlbumsDirectoryView({ onSelectAlbum, onPlayAlbumQuick }: AlbumsDirectoryViewProps) {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState<AlbumFilterTab>("all");
 
@@ -67,14 +51,7 @@ export function AlbumsDirectoryView({
       const matchCast = album.movieDetails?.starCast.some((star) => star.toLowerCase().includes(q));
       const matchDirector = album.movieDetails?.musicDirectors.some((md) => md.toLowerCase().includes(q));
 
-      if (
-        !matchTitle &&
-        !matchArtist &&
-        !matchSingers &&
-        !matchYear &&
-        !matchCast &&
-        !matchDirector
-      ) {
+      if (!matchTitle && !matchArtist && !matchSingers && !matchYear && !matchCast && !matchDirector) {
         return false;
       }
     }
@@ -192,16 +169,11 @@ export function AlbumsDirectoryView({
               </div>
 
               {/* Title & Disambiguation info */}
-              <div
-                onClick={() => onSelectAlbum(album)}
-                className="cursor-pointer space-y-1"
-              >
+              <div onClick={() => onSelectAlbum(album)} className="cursor-pointer space-y-1">
                 <h3 className="text-sm font-bold text-white group-hover:text-[#00e5c9] transition-colors truncate">
                   {album.title}
                 </h3>
-                <p className="text-[11px] text-[#718096] truncate">
-                  {album.disambiguationLabel}
-                </p>
+                <p className="text-[11px] text-[#718096] truncate">{album.disambiguationLabel}</p>
 
                 {album.movieDetails?.starCast && (
                   <p className="text-[10px] text-[#9ba5b9] truncate">

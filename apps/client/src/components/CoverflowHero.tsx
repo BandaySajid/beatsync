@@ -64,12 +64,7 @@ const FEATURED_ITEMS: FeaturedHeroItem[] = [
   },
 ];
 
-export function CoverflowHero({
-  onPlayTrack,
-  currentTrack,
-  isPlaying,
-  onOpenStudio,
-}: CoverflowHeroProps) {
+export function CoverflowHero({ onPlayTrack, currentTrack, isPlaying, onOpenStudio }: CoverflowHeroProps) {
   const [activeIndex, setActiveIndex] = useState(0);
 
   // Auto-rotate every 7 seconds unless hovered
@@ -91,8 +86,7 @@ export function CoverflowHero({
   };
 
   const activeItem = FEATURED_ITEMS[activeIndex];
-  const isCurrentActivePlaying =
-    currentTrack?.id === activeItem.id && isPlaying;
+  const isCurrentActivePlaying = currentTrack?.id === activeItem.id && isPlaying;
 
   const handlePlayCurrent = (item: FeaturedHeroItem) => {
     const track: Track = {
@@ -143,8 +137,8 @@ export function CoverflowHero({
                 transform: isCenter
                   ? "translateX(0) scale(1) translateZ(50px)"
                   : isLeft
-                  ? "translateX(-48%) scale(0.82) rotateY(18deg) translateZ(-40px)"
-                  : "translateX(48%) scale(0.82) rotateY(-18deg) translateZ(-40px)",
+                    ? "translateX(-48%) scale(0.82) rotateY(18deg) translateZ(-40px)"
+                    : "translateX(48%) scale(0.82) rotateY(-18deg) translateZ(-40px)",
                 zIndex: isCenter ? 30 : 10,
                 opacity: isCenter ? 1 : 0.65,
               }}
@@ -184,9 +178,7 @@ export function CoverflowHero({
                 <h3 className="text-base sm:text-lg font-bold text-white tracking-tight drop-shadow truncate">
                   {item.title}
                 </h3>
-                <p className="text-xs text-[#95a8b4] font-medium mt-0.5 truncate drop-shadow">
-                  {item.artist}
-                </p>
+                <p className="text-xs text-[#95a8b4] font-medium mt-0.5 truncate drop-shadow">{item.artist}</p>
               </div>
             </div>
           );

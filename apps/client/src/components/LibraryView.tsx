@@ -1,17 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import {
-  Heart,
-  Library,
-  History,
-  Play,
-  Trash2,
-  Plus,
-  Music2,
-  X,
-  Clock,
-} from "lucide-react";
+import { Heart, Library, History, Play, Trash2, Plus, Music2, X, Clock } from "lucide-react";
 import type { Track, Playlist } from "@soundlounge/shared";
 import type { LastSessionSnapshot } from "../lib/store/useLibraryStore";
 import { TrackArtwork } from "./TrackArtwork";
@@ -178,9 +168,7 @@ export function LibraryView({
                         <p className="text-xs font-semibold text-white truncate group-hover:text-sky-300 transition-colors">
                           {track.title}
                         </p>
-                        <p className="text-[11px] text-[#71788d] truncate mt-0.5">
-                          {track.artist}
-                        </p>
+                        <p className="text-[11px] text-[#71788d] truncate mt-0.5">{track.artist}</p>
                       </div>
                     </div>
 
@@ -249,9 +237,7 @@ export function LibraryView({
 
                   <div className="mt-4 pt-3 border-t border-[#12151f] flex items-center justify-between">
                     <button
-                      onClick={() =>
-                        setSelectedPlaylistId(selectedPlaylistId === pl.id ? null : pl.id)
-                      }
+                      onClick={() => setSelectedPlaylistId(selectedPlaylistId === pl.id ? null : pl.id)}
                       className="text-[11px] text-[#71788d] hover:text-white transition-colors cursor-pointer"
                     >
                       {selectedPlaylistId === pl.id ? "Hide Tracks" : "View Tracks"}
@@ -285,9 +271,7 @@ export function LibraryView({
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-white flex items-center gap-2">
                   <span>{selectedPlaylist.name} Tracks</span>
-                  <span className="text-[10px] text-[#636c82] font-normal">
-                    ({selectedPlaylist.tracks.length})
-                  </span>
+                  <span className="text-[10px] text-[#636c82] font-normal">({selectedPlaylist.tracks.length})</span>
                 </h3>
                 <button
                   onClick={() => setSelectedPlaylistId(null)}
@@ -313,9 +297,7 @@ export function LibraryView({
                           iconClassName="w-4 h-4"
                         />
                         <div className="truncate">
-                          <p className="text-xs font-semibold text-white truncate">
-                            {track.title}
-                          </p>
+                          <p className="text-xs font-semibold text-white truncate">{track.title}</p>
                           <p className="text-[11px] text-[#71788d] truncate">{track.artist}</p>
                         </div>
                       </div>
@@ -383,9 +365,7 @@ export function LibraryView({
                         <p className="text-xs font-semibold text-white truncate group-hover:text-sky-300 transition-colors">
                           {track.title}
                         </p>
-                        <p className="text-[11px] text-[#71788d] truncate mt-0.5">
-                          {track.artist}
-                        </p>
+                        <p className="text-[11px] text-[#71788d] truncate mt-0.5">{track.artist}</p>
                       </div>
                     </div>
 
@@ -410,9 +390,7 @@ export function LibraryView({
             <div className="text-center py-16 rounded-xl border border-[#171a25] bg-[#090b10] space-y-2">
               <Clock className="w-8 h-8 text-[#363d50] mx-auto" />
               <p className="text-xs text-[#8c94aa] font-medium">No listening history yet</p>
-              <p className="text-[11px] text-[#586073]">
-                Tracks you play will be cataloged here automatically.
-              </p>
+              <p className="text-[11px] text-[#586073]">Tracks you play will be cataloged here automatically.</p>
             </div>
           )}
         </>

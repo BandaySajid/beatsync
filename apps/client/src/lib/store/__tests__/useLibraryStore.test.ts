@@ -46,8 +46,7 @@ describe("useLibraryStore (On-Device LocalStorage Persistence)", () => {
   });
 
   it("creates playlists and adds tracks to them", () => {
-    const { createPlaylist, addTrackToPlaylist, removeTrackFromPlaylist } =
-      useLibraryStore.getState();
+    const { createPlaylist, addTrackToPlaylist, removeTrackFromPlaylist } = useLibraryStore.getState();
 
     const playlistId = createPlaylist("Late Night Vibes", "Chill electronic tracks");
     expect(useLibraryStore.getState().playlists.length).toBe(1);
