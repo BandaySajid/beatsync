@@ -40,7 +40,7 @@ interface TopBarProps {
   onNavForward?: () => void;
   onOpenUpload?: () => void;
   onPlayTrack?: (track: Track) => void;
-  onAddTrack?: (track: Track) => void;
+  onAddTrack?: (track: Track, playNext?: boolean) => void;
   onSelectArtist?: (artist: ArtistProfileData) => void;
   onSelectAlbum?: (album: Album) => void;
 }
@@ -208,10 +208,10 @@ export function TopBar({
     setIsDropdownOpen(false);
   };
 
-  const handleAddTrackQueue = (e: React.MouseEvent, track: Track) => {
+  const handleAddTrackQueue = (e: React.MouseEvent, track: Track, playNext: boolean = false) => {
     e.stopPropagation();
     if (onAddTrack) {
-      onAddTrack(track);
+      onAddTrack(track, playNext);
       setAddedTrackId(track.id);
       setTimeout(() => setAddedTrackId(null), 1500);
     }
@@ -460,7 +460,15 @@ export function TopBar({
                             </span>
 
                             <button
-                              onClick={(e) => handleAddTrackQueue(e, track)}
+                              onClick={(e) => handleAddTrackQueue(e, track, true)}
+                              title="Play Next"
+                              className="p-1.5 text-[#5c707d] hover:text-[#00e5c9] rounded-lg hover:bg-[#1a2d39] transition-colors cursor-pointer"
+                            >
+                              <ArrowRight className="w-3.5 h-3.5" />
+                            </button>
+
+                            <button
+                              onClick={(e) => handleAddTrackQueue(e, track, false)}
                               title="Add to Playing Queue"
                               className="p-1.5 text-[#5c707d] hover:text-white rounded-lg hover:bg-[#1a2d39] transition-colors cursor-pointer"
                             >
