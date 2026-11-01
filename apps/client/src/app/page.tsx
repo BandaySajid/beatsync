@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { TopBar } from "../components/TopBar";
 import { AmbientBackground } from "../components/AmbientBackground";
 import { CoverflowHero } from "../components/CoverflowHero";
@@ -16,6 +16,7 @@ import { AccessDenied } from "../components/AccessDenied";
 import { StudioImmersiveModal } from "../components/StudioImmersiveModal";
 import { NavigationSidebar, type NavTab } from "../components/NavigationSidebar";
 import { ArtistDetailView } from "../components/ArtistDetailView";
+import { ArtistsDirectoryView } from "../components/ArtistsDirectoryView";
 import { AlbumDetailView } from "../components/AlbumDetailView";
 import { AlbumsDirectoryView } from "../components/AlbumsDirectoryView";
 import { GenreDirectoryView } from "../components/GenreDirectoryView";
@@ -49,20 +50,20 @@ export default function SoundloungeApp() {
   const [historyIndex, setHistoryIndex] = useState(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [roomId, setRoomId] = useState("lounge-main");
-  const [inviteToken, setInviteToken] = useState<string | undefined>(undefined);
+  const [roomId] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("room") || "lounge-main";
+    }
+    return "lounge-main";
+  });
+  const [inviteToken, setInviteToken] = useState<string | undefined>(() => {
+    if (typeof window !== "undefined") {
+      return new URLSearchParams(window.location.search).get("invite") || undefined;
+    }
+    return undefined;
+  });
   const [isInviteOpen, setIsInviteOpen] = useState(false);
   const [isStudioOpen, setIsStudioOpen] = useState(false);
-
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      const params = new URLSearchParams(window.location.search);
-      const urlRoom = params.get("room");
-      const urlInvite = params.get("invite");
-      if (urlRoom) setRoomId(urlRoom);
-      if (urlInvite) setInviteToken(urlInvite);
-    }
-  }, []);
 
   const handleTabChange = (tab: NavTab) => {
     setSelectedArtist(null);
@@ -459,6 +460,10 @@ export default function SoundloungeApp() {
                   onPlayTrack={handlePlaySingleTrack}
                   onAddTrack={handleAddTrack}
                   onPlayAll={handlePlayArtistAll}
+                  onSelectAlbum={(album) => {
+                    setSelectedArtist(null);
+                    setSelectedAlbum(album);
+                  }}
                   currentTrack={activeTrack}
                   isPlaying={playerState.status === "playing"}
                 />
@@ -600,12 +605,11 @@ export default function SoundloungeApp() {
 
                   {/* 6. ARTISTS DIRECT VIEW */}
                   {activeTab === "artists" && (
-                    <div className="max-w-4xl mx-auto space-y-6">
-                      <div className="flex items-center justify-between">
-                        <h2 className="text-lg font-bold text-white tracking-tight">Browse Artists</h2>
-                        <span className="text-xs text-[#718492]">Featured Vocalists & Producers</span>
-                      </div>
-                      <RecentArtistsGrid onSelectArtist={(artist) => setSelectedArtist(artist)} />
+                    <div className="max-w-6xl mx-auto">
+                      <ArtistsDirectoryView
+                        onSelectArtist={(artist) => setSelectedArtist(artist)}
+                        onPlayArtistTopSongs={(artist) => handlePlayArtistAll(artist.topTracks)}
+                      />
                     </div>
                   )}
 

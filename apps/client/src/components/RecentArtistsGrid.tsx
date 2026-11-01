@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
-import { Users, Play, Sparkles } from "lucide-react";
+import { Users, Play } from "lucide-react";
 import { ARTISTS_CATALOG, type RegionKey, type ArtistProfileData } from "../lib/data/artistsCatalog";
 
 interface RecentArtistsGridProps {
@@ -29,9 +29,12 @@ export function RecentArtistsGrid({ onSelectArtist }: RecentArtistsGridProps) {
       <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
         {[
           { id: "all", label: "All" },
-          { id: "global", label: "Global" },
-          { id: "punjabi", label: "Punjabi" },
+          { id: "bollywood", label: "Bollywood" },
           { id: "ghazal", label: "Ghazal" },
+          { id: "punjabi", label: "Punjabi" },
+          { id: "retro", label: "Retro" },
+          { id: "rock", label: "Rock" },
+          { id: "global", label: "Global" },
           { id: "hiphop", label: "Hip-Hop" },
           { id: "electronic", label: "EDM" },
         ].map((tab) => (

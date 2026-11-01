@@ -47,7 +47,7 @@ async function searchExactSong(title: string, artist?: string): Promise<string |
     const query = `${cleanTitle} ${cleanArtist} audio`.trim();
 
     const search = await yt.search(query);
-    const videos = (search.videos as any[]) || [];
+    const videos = (search.videos as Array<{ duration?: { seconds?: number }; id?: string }>) || [];
 
     // Filter for proper song duration: between 50s and 12 mins (720s)
     const validSongVideos = videos.filter((v) => {
@@ -122,7 +122,7 @@ async function getAudioStreamUrl(
 
   let videoId = await resolveToValidVideoId(idInput, title, artist, q);
 
-  let info: any;
+  let info: Awaited<ReturnType<typeof ytdl.getInfo>>;
   try {
     info = await ytdl.getInfo(videoId);
 
@@ -150,7 +150,8 @@ async function getAudioStreamUrl(
 
   // Prefer audio/mp4 (AAC) for universal browser support, fallback to audio/webm (Opus)
   const mp4Format = chooseFormat(info.formats, {
-    filter: (f) => Boolean(f.hasAudio && !f.hasVideo && f.mimeType && f.mimeType.includes("mp4")),
+    filter: (f: { hasAudio?: boolean; hasVideo?: boolean; mimeType?: string }) =>
+      Boolean(f.hasAudio && !f.hasVideo && f.mimeType && f.mimeType.includes("mp4")),
   });
 
   const chosenFormat =
@@ -231,8 +232,9 @@ export async function GET(req: NextRequest) {
       status: upstreamRes.status,
       headers: responseHeaders,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`Streaming error for ${videoId || title || query}:`, err);
-    return new NextResponse(`Streaming error: ${err.message}`, { status: 500 });
+    return new NextResponse(`Streaming error: ${message}`, { status: 500 });
   }
 }
