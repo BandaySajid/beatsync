@@ -3,6 +3,10 @@ import path from "path";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
+  serverExternalPackages: ["@distube/ytdl-core"],
+  outputFileTracingIncludes: {
+    "/api/**/*": ["./node_modules/@distube/ytdl-core/**/*"],
+  },
   images: {
     remotePatterns: [
       {
