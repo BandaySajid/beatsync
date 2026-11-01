@@ -1,4 +1,4 @@
-import type { Album, Track } from "@soundlounge/shared";
+import type { Album } from "@soundlounge/shared";
 import { ALBUMS_CATALOG } from "../data/albumsCatalog";
 
 function clean(str: string): string {
@@ -76,6 +76,31 @@ export async function searchAlbums(query: string, options?: { year?: number; art
 }
 
 /**
+ * Disambiguation Engine: Finds alternative releases that share the same or easily-confused
+ * title, band name, or cinematic franchise (e.g. The Train 2007 vs The Train 1970 vs Train the band).
+ */
+export function getDisambiguationCounterparts(albumId: string): Album[] {
+  const current = ALBUMS_CATALOG.find((a) => a.id === albumId);
+  if (!current) return [];
+
+  const currentTitleClean = clean(current.title);
+  const currentArtistClean = clean(current.primaryArtist);
+
+  // Define cross-era / cross-entity disambiguation clusters
+  const isTrainRelated =
+    currentTitleClean === "the train" || currentArtistClean === "train" || current.id.includes("train_");
+
+  if (isTrainRelated) {
+    return ALBUMS_CATALOG.filter(
+      (a) => a.id !== albumId && (clean(a.title) === "the train" || clean(a.primaryArtist) === "train")
+    );
+  }
+
+  // General title collision detection (e.g., releases sharing normalized titles)
+  return ALBUMS_CATALOG.filter((a) => a.id !== albumId && clean(a.title) === currentTitleClean);
+}
+
+/**
  * Retrieves all albums associated with an artist (as primary composer/artist or featured singer).
  */
 export async function getAlbumsForArtist(artistName: string): Promise<Album[]> {
@@ -96,4 +121,32 @@ export async function getAlbumsForArtist(artistName: string): Promise<Album[]> {
 export function getAlbumsByGenre(genre: string): Album[] {
   const gClean = clean(genre);
   return ALBUMS_CATALOG.filter((album) => album.genres.some((g) => clean(g).includes(gClean)));
+}
+
+/**
+ * Filters albums by movie soundtrack vs studio album.
+ */
+export function getAlbumsByType(type: "movie_soundtrack" | "studio_album"): Album[] {
+  return ALBUMS_CATALOG.filter((album) => album.type === type);
+}
+
+/**
+ * Filters albums featuring a specific actor in the star cast.
+ */
+export function getAlbumsByStarCast(actorName: string): Album[] {
+  const actorClean = clean(actorName);
+  const actorCompact = actorClean.replace(/\s+/g, "");
+  if (!actorClean) return [];
+
+  return ALBUMS_CATALOG.filter((album) =>
+    album.movieDetails?.starCast.some((star) => {
+      const starClean = clean(star);
+      const starCompact = starClean.replace(/\s+/g, "");
+      return (
+        starClean.includes(actorClean) ||
+        actorClean.includes(starClean) ||
+        (actorCompact.length >= 4 && (starCompact.includes(actorCompact) || actorCompact.includes(starCompact)))
+      );
+    })
+  );
 }
