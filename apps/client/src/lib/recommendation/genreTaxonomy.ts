@@ -392,10 +392,13 @@ export function classifyGenre(track: { title?: string; artist?: string; genre?: 
     const g = genreKey as MusicGenre;
 
     for (const coreArtist of def.coreArtists) {
-      if (
-        normArtist.includes(coreArtist) ||
-        coreArtist.includes(normArtist && normArtist.length > 3 ? normArtist : "___")
-      ) {
+      const isShort = coreArtist.length <= 3;
+      const matches = isShort
+        ? new RegExp(`(^|[^a-zA-Z0-9])${coreArtist}([^a-zA-Z0-9]|$)`, "i").test(normArtist)
+        : normArtist.includes(coreArtist) ||
+          coreArtist.includes(normArtist && normArtist.length > 3 ? normArtist : "___");
+
+      if (matches) {
         return {
           genre: g,
           confidence: 0.95,
@@ -452,9 +455,12 @@ export function getPeerArtistsForArtist(artistName: string): string[] {
   for (const [genreKey, def] of Object.entries(GENRE_DEFINITIONS)) {
     if (genreKey === "other") continue;
 
-    const matchesArtist = def.coreArtists.some(
-      (a) => norm.includes(a) || a.includes(norm && norm.length > 3 ? norm : "___")
-    );
+    const matchesArtist = def.coreArtists.some((a) => {
+      if (a.length <= 3) {
+        return new RegExp(`(^|[^a-zA-Z0-9])${a}([^a-zA-Z0-9]|$)`, "i").test(norm);
+      }
+      return norm.includes(a) || a.includes(norm && norm.length > 3 ? norm : "___");
+    });
 
     if (matchesArtist) {
       // Return peer artists excluding the artist themselves

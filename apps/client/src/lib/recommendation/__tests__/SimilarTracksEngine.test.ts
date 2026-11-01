@@ -1,5 +1,5 @@
 import { describe, it, expect } from "bun:test";
-import { findSimilarTrack } from "../SimilarTracksEngine";
+import { findSimilarTrack, resolveEffectiveArtist, normalizeSongTitle } from "../SimilarTracksEngine";
 import type { Track } from "@soundlounge/shared";
 
 describe("Intelligent Similar Tracks Recommendation Engine", () => {
@@ -140,7 +140,7 @@ describe("Intelligent Similar Tracks Recommendation Engine", () => {
     const res = await findSimilarTrack({
       currentTrack: obscureTrack,
       existingQueue: [obscureTrack],
-      fetchFn: mockFetch as any,
+      fetchFn: mockFetch as unknown as typeof fetch,
     });
 
     expect(res).not.toBeNull();
@@ -148,7 +148,7 @@ describe("Intelligent Similar Tracks Recommendation Engine", () => {
     expect(res!.matchType).toBe("live_search");
   });
 
-  it("never duplicates tracks already in the active queue", async () => {
+  it("never duplicates tracks already in the active queue by id", async () => {
     const queue = [sidhuTrack1, sidhuTrack2];
     const res = await findSimilarTrack({
       currentTrack: sidhuTrack1,
@@ -157,5 +157,86 @@ describe("Intelligent Similar Tracks Recommendation Engine", () => {
 
     expect(res).not.toBeNull();
     expect(queue.some((t) => t.id === res!.track.id)).toBe(false);
+  });
+
+  it("never duplicates songs with title variations (e.g. Softly vs SOFTLY KARAN AUJLA)", async () => {
+    const softlyInQueue: Track = {
+      id: "yt_softly_original",
+      title: "Softly",
+      artist: "Karan Aujla",
+      durationMs: 156000,
+      url: "/api/stream/youtube?id=softly_original",
+      source: "youtube",
+    };
+
+    const winningSpeechPlaying: Track = {
+      id: "yt_winning_speech",
+      title: "Winning Speech",
+      artist: "Karan Aujla",
+      durationMs: 204000,
+      url: "/api/stream/youtube?id=winning_speech",
+      source: "youtube",
+    };
+
+    // Candidate 1 is a duplicate of Softly (different video ID, uppercase title + artist suffix)
+    const duplicateSoftlyCandidate: Track = {
+      id: "yt_softly_duplicate_upload",
+      title: "SOFTLY KARAN AUJLA",
+      artist: "Karan Aujla",
+      durationMs: 171000,
+      url: "/api/stream/youtube?id=softly_duplicate_upload",
+      source: "youtube",
+    };
+
+    // Candidate 2 is a fresh unplayed song by Karan Aujla
+    const freshCandidate: Track = {
+      id: "yt_admirin_you",
+      title: "Admirin' You",
+      artist: "Karan Aujla",
+      durationMs: 214000,
+      url: "/api/stream/youtube?id=admirin_you",
+      source: "youtube",
+    };
+
+    const mockFetch = async () => {
+      return {
+        ok: true,
+        json: async () => ({ tracks: [duplicateSoftlyCandidate, freshCandidate] }),
+      } as unknown as Response;
+    };
+
+    const res = await findSimilarTrack({
+      currentTrack: winningSpeechPlaying,
+      existingQueue: [softlyInQueue, winningSpeechPlaying],
+      fetchFn: mockFetch as unknown as typeof fetch,
+    });
+
+    expect(res).not.toBeNull();
+    // It MUST skip the duplicate "SOFTLY KARAN AUJLA" and pick "Admirin' You"
+    expect(res!.track.id).toBe("yt_admirin_you");
+    expect(res!.track.title).toBe("Admirin' You");
+  });
+
+  it("correctly identifies Karan Aujla and avoids false KK matches caused by producer Ikky", () => {
+    // Song produced by Ikky
+    const trackWithIkky: Track = {
+      id: "yt_karan_for_a_reason",
+      title: "For A Reason (Official Video) Karan Aujla | Tania | Ikky | Latest Punjabi Songs 2025",
+      artist: "Rehaan Records",
+      durationMs: 189000,
+      url: "/api/stream/youtube?id=karan_for_a_reason",
+      source: "youtube",
+    };
+
+    const artist = resolveEffectiveArtist(trackWithIkky);
+    expect(artist).toBe("Karan Aujla");
+    expect(artist).not.toBe("KK");
+  });
+
+  it("normalizes song titles accurately across formatting styles", () => {
+    expect(normalizeSongTitle("Softly", "Karan Aujla")).toBe("softly");
+    expect(normalizeSongTitle("SOFTLY KARAN AUJLA", "Karan Aujla")).toBe("softly");
+    expect(normalizeSongTitle("Softly (Official Music Video)", "Karan Aujla")).toBe("softly");
+    expect(normalizeSongTitle("Softly - Lyrical Song", "Karan Aujla")).toBe("softly");
   });
 });
