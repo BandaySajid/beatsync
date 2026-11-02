@@ -1,22 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import {
-  Play,
-  Pause,
-  SkipForward,
-  SkipBack,
-  Heart,
-  Volume2,
-  VolumeX,
-  X,
-  Sparkles,
-  Maximize2,
-  Minimize2,
-  Radio,
-  Music2,
-  Disc3,
-} from "lucide-react";
+import { Play, Pause, SkipForward, SkipBack, Heart, Volume2, VolumeX, Minimize2, Radio, Music2 } from "lucide-react";
 import type { Track } from "@soundlounge/shared";
 
 interface StudioImmersiveModalProps {
