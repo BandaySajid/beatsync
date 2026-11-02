@@ -35,7 +35,13 @@ export function LibraryView({
   const [selectedPlaylistId, setSelectedPlaylistId] = useState<string | null>(null);
 
   // Sync with prop if it changes
-  const currentTab = activeSection || internalTab;
+  React.useEffect(() => {
+    if (activeSection) {
+      setInternalTab(activeSection);
+    }
+  }, [activeSection]);
+
+  const currentTab = internalTab;
 
   const formatTime = (ms: number) => {
     const totalSecs = Math.floor(ms / 1000);
@@ -56,43 +62,53 @@ export function LibraryView({
   const selectedPlaylist = playlists.find((p) => p.id === selectedPlaylistId);
 
   return (
-    <div className="space-y-4">
-      {/* Tab Header if viewing library as a standalone component */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-            {currentTab === "liked" && (
-              <>
-                <Heart className="w-4 h-4 text-rose-500 fill-current" />
-                Liked Songs ({likedTracks.length})
-              </>
-            )}
-            {currentTab === "playlists" && (
-              <>
-                <Library className="w-4 h-4 text-indigo-400" />
-                Playlists ({playlists.length})
-              </>
-            )}
-            {currentTab === "history" && (
-              <>
-                <History className="w-4 h-4 text-sky-400" />
-                Listening History ({history.length})
-              </>
-            )}
-          </h2>
-          <p className="text-xs text-[#636c82] mt-0.5">
-            {currentTab === "liked" && "Your personal favorite tracks saved locally"}
-            {currentTab === "playlists" && "Custom playlists and curated track collections"}
-            {currentTab === "history" && "Tracks you have listened to in Soundlounge"}
-          </p>
+    <div className="space-y-6">
+      {/* Tab Navigation Pill Bar */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setInternalTab("liked")}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              currentTab === "liked"
+                ? "bg-rose-500/15 text-rose-400 border border-rose-500/30 shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+            }`}
+          >
+            <Heart className={`w-3.5 h-3.5 ${currentTab === "liked" ? "fill-current" : ""}`} />
+            <span>Liked Songs ({likedTracks.length})</span>
+          </button>
+
+          <button
+            onClick={() => setInternalTab("playlists")}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              currentTab === "playlists"
+                ? "bg-indigo-500/15 text-indigo-400 border border-indigo-500/30 shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+            }`}
+          >
+            <Library className="w-3.5 h-3.5" />
+            <span>Playlists ({playlists.length})</span>
+          </button>
+
+          <button
+            onClick={() => setInternalTab("history")}
+            className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
+              currentTab === "history"
+                ? "bg-sky-500/15 text-sky-400 border border-sky-500/30 shadow-sm"
+                : "text-slate-400 hover:text-white hover:bg-slate-800/50"
+            }`}
+          >
+            <History className="w-3.5 h-3.5" />
+            <span>History ({history.length})</span>
+          </button>
         </div>
 
         {currentTab === "playlists" && !showCreateInput && (
           <button
             onClick={() => setShowCreateInput(true)}
-            className="flex items-center gap-1.5 text-xs text-[#8c94aa] hover:text-white px-3 py-1.5 rounded-lg bg-[#0e111a] hover:bg-[#151926] border border-[#1b202d] transition-colors cursor-pointer"
+            className="flex items-center gap-1.5 text-xs text-[#00e5ff] hover:text-white px-3 py-1.5 rounded-lg bg-[#00e5ff]/10 hover:bg-[#00e5ff]/20 border border-[#00e5ff]/30 transition-colors cursor-pointer"
           >
-            <Plus className="w-3.5 h-3.5 text-indigo-400" />
+            <Plus className="w-3.5 h-3.5 text-[#00e5ff]" />
             New Playlist
           </button>
         )}
